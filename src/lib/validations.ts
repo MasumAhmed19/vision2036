@@ -62,3 +62,19 @@ export type PaymentFormData = z.infer<typeof paymentSchema>;
 export type BankAccountFormData = z.infer<typeof bankAccountSchema>;
 export type RegisterUserFormData = z.infer<typeof registerUserSchema>;
 export type PolicyFormData = z.infer<typeof policySchema>;
+
+export const forgotPasswordSchema = z.object({
+  email: z.string().email('Invalid email address'),
+});
+
+export const resetPasswordSchema = z.object({
+  token: z.string().min(1, 'Token is required'),
+  newPassword: z.string().min(6, 'Password must be at least 6 characters'),
+  confirmPassword: z.string().min(1, 'Please confirm your password'),
+}).refine((data) => data.newPassword === data.confirmPassword, {
+  message: "Passwords don't match",
+  path: ['confirmPassword'],
+});
+
+export type ForgotPasswordFormData = z.infer<typeof forgotPasswordSchema>;
+export type ResetPasswordFormData = z.infer<typeof resetPasswordSchema>;

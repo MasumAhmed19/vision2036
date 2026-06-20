@@ -5,7 +5,7 @@ import { NextResponse } from 'next/server';
 const { auth } = NextAuth(authConfig);
 
 // Routes that don't require authentication
-const PUBLIC_ROUTES = ['/login'];
+const PUBLIC_ROUTES = ['/login', '/forgot-password', '/reset-password'];
 
 // Routes that require admin or moderator role
 const ADMIN_ROUTES = ['/admin'];

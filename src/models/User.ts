@@ -14,6 +14,8 @@ export interface IUser {
     joinedAt: Date;
     createdAt: Date;
     updatedAt: Date;
+    resetTokenHash?: string;
+    resetTokenExpiry?: Date;
 }
 
 export interface IUserDocument extends Omit<IUser, ''>, Document {
@@ -65,6 +67,13 @@ const UserSchema = new Schema<IUserDocument>(
         joinedAt: {
             type: Date,
             default: Date.now,
+        },
+        resetTokenHash: {
+            type: String,
+            select: false, // Never returned in normal queries
+        },
+        resetTokenExpiry: {
+            type: Date,
         },
     },
     {
