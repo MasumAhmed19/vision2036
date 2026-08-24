@@ -6,6 +6,7 @@ import Cost from '@/models/Cost';
 import AuditLog from '@/models/AuditLog';
 import { rebuildMonthlySummaryForMonth } from '@/lib/summary-engine';
 import { syncCostToGoogleSheets } from '@/lib/google-sheets';
+import { getClientIp } from '@/lib/request-ip';
 
 const costSchema = z.object({
   amount: z.coerce.number().positive('Amount must be greater than 0'),
@@ -107,7 +108,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       targetId: String(cost._id),
       previousValue: previousValue as unknown as Record<string, unknown>,
       newValue: cost.toObject() as unknown as Record<string, unknown>,
-      ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'Unknown',
+      ipAddress: getClientIp(request.headers),
     });
 
     try {
@@ -166,7 +167,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       targetCollection: 'Costs',
       targetId: id,
       previousValue: previousValue as unknown as Record<string, unknown>,
-      ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'Unknown',
+      ipAddress: getClientIp(request.headers),
     });
 
     return NextResponse.json({ success: true, data: null, message: 'Cost deleted successfully' });

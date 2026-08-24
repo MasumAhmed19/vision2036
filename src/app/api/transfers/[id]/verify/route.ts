@@ -5,6 +5,7 @@ import connectDB from '@/lib/mongoose';
 import Transfer from '@/models/Transfer';
 import { rebuildMonthlySummaryForMonth } from '@/lib/summary-engine';
 import { syncTransferToGoogleSheets } from '@/lib/google-sheets';
+import { getClientIp } from '@/lib/request-ip';
 
 const verifyTransferSchema = z.object({
     status: z.enum(['VERIFIED', 'REJECTED']),
@@ -132,7 +133,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             action: actionLabel,
             targetCollection: 'Transfers',
             targetId: transfer._id.toString(),
-            ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'Unknown',
+            ipAddress: getClientIp(request.headers),
         });
 
         if (status === 'VERIFIED' && transfer.syncedToSheet) {

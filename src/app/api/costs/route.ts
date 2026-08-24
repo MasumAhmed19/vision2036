@@ -6,6 +6,7 @@ import Cost from '@/models/Cost';
 import AuditLog from '@/models/AuditLog';
 import { rebuildMonthlySummaryForMonth } from '@/lib/summary-engine';
 import { syncCostToGoogleSheets } from '@/lib/google-sheets';
+import { getClientIp } from '@/lib/request-ip';
 
 const costSchema = z.object({
   amount: z.coerce.number().positive('Amount must be greater than 0'),
@@ -120,7 +121,7 @@ export async function POST(request: Request) {
       targetCollection: 'Costs',
       targetId: String(cost._id),
       newValue: { amount: cost.amount, date: cost.date, category: cost.category, reason: cost.reason },
-      ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'Unknown',
+      ipAddress: getClientIp(request.headers),
     });
 
     try {

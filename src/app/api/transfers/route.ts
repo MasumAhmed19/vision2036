@@ -5,6 +5,7 @@ import connectDB from '@/lib/mongoose';
 import Transfer, { classifyTransferPaymentType } from '@/models/Transfer';
 import User from '@/models/User';
 import BankAccount from '@/models/BankAccount';
+import { getClientIp } from '@/lib/request-ip';
 
 const transferChannels = ['BANK_TRANSFER', 'BKASH', 'NAGAD', 'ROCKET', 'CASH', 'OTHER'] as const;
 
@@ -332,7 +333,7 @@ export async function POST(request: Request) {
             action: 'TRANSFER_CREATED',
             targetCollection: 'Transfers',
             targetId: newTransfer._id.toString(),
-            ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'Unknown',
+            ipAddress: getClientIp(request.headers),
         });
 
         return NextResponse.json({
