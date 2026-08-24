@@ -5,7 +5,7 @@ import Cost from '@/models/Cost';
 import AuditLog from '@/models/AuditLog';
 import { syncCostToGoogleSheets } from '@/lib/google-sheets';
 
-export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await auth();
     if (!session?.user?.id || !['admin', 'moderator'].includes(session.user.role)) {
@@ -18,6 +18,14 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     const cost = await Cost.findById(id).populate('submittedBy', 'name email').populate('approvedBy', 'name email');
     if (!cost) {
       return NextResponse.json({ success: false, message: 'Cost not found' }, { status: 404 });
+    }
+
+    const body = await request.json().catch(() => ({}));
+    if (cost.syncedToSheet && body?.force !== true) {
+      return NextResponse.json(
+        { success: false, message: 'Already synced. Pass { "force": true } to re-sync (this will append a second row).' },
+        { status: 400 }
+      );
     }
 
     await syncCostToGoogleSheets(cost as any);

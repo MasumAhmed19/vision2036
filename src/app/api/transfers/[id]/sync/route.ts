@@ -5,7 +5,7 @@ import Transfer from '@/models/Transfer';
 import AuditLog from '@/models/AuditLog';
 import { syncTransferToGoogleSheets } from '@/lib/google-sheets';
 
-export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await auth();
     if (!session?.user?.id || !['admin', 'moderator'].includes(session.user.role)) {
@@ -25,6 +25,14 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
     if (transfer.status !== 'VERIFIED') {
       return NextResponse.json({ success: false, message: 'Only verified transfers can be synced' }, { status: 400 });
+    }
+
+    const body = await request.json().catch(() => ({}));
+    if (transfer.syncedToSheet && body?.force !== true) {
+      return NextResponse.json(
+        { success: false, message: 'Already synced. Pass { "force": true } to re-sync (this will append a second row).' },
+        { status: 400 }
+      );
     }
 
     await syncTransferToGoogleSheets(transfer as any, (transfer.verifiedById as any)?.name || session.user.name || 'Unknown');

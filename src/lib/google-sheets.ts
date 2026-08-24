@@ -163,7 +163,10 @@ async function appendRows(sheetName: string, rows: (string | number)[][]) {
     sheets.spreadsheets.values.append({
       spreadsheetId: config.spreadsheetId,
       range: `${sheetName}!A:Z`,
-      valueInputOption: 'USER_ENTERED',
+      // RAW, not USER_ENTERED — rows carry user-controlled strings (member
+      // names, cost reasons); USER_ENTERED parses a leading '=' as a live
+      // formula, which is a formula-injection vector.
+      valueInputOption: 'RAW',
       insertDataOption: 'INSERT_ROWS',
       requestBody: { values: rows },
     })
