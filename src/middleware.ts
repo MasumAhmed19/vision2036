@@ -34,6 +34,14 @@ export default auth((req) => {
         return NextResponse.redirect(loginUrl);
     }
 
+    // Deactivated members keep a valid JWT until it's next refreshed — force
+    // them back to login rather than trusting the (possibly stale) token.
+    if (session?.user?.isActive === false) {
+        const loginUrl = new URL('/login', nextUrl);
+        loginUrl.searchParams.set('callbackUrl', pathname);
+        return NextResponse.redirect(loginUrl);
+    }
+
     // Admin routes but user is just a member → redirect to dashboard
     if (isAdminRoute) {
         const userRole = session?.user?.role as string | undefined;

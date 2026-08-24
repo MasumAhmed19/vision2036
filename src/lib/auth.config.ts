@@ -13,10 +13,12 @@ export const authConfig: NextAuthConfig = {
       }
 
       if (trigger === 'update' && session) {
+        // Only name/avatar/phoneNumber may be client-supplied here. role and
+        // isActive must never be trusted from the client — they're re-read
+        // from the DB in auth.ts's jwt callback override.
         token.name = (session.name as string) ?? token.name;
         token.avatar = (session.avatar as string | null) ?? token.avatar;
         token.phoneNumber = (session.phoneNumber as string | null) ?? token.phoneNumber;
-        token.role = (session.role as string) ?? token.role;
       }
 
       return token;

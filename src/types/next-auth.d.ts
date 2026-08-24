@@ -30,5 +30,7 @@ declare module 'next-auth/jwt' {
         avatar: string | null;
         phoneNumber: string | null;
         isActive: boolean;
+        // epoch ms of the last DB re-validation of role/isActive (see auth.ts)
+        checkedAt?: number;
     }
 }

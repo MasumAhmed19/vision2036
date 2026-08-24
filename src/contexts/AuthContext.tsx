@@ -25,7 +25,10 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
-  updateUser: (user: Partial<User>) => void;
+  // role/isActive are server-authoritative (see auth.ts's jwt callback) and
+  // must never be sent from the client — narrowed here so no call site can
+  // even attempt it.
+  updateUser: (user: Partial<Pick<User, 'name' | 'avatar' | 'phoneNumber'>>) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -88,7 +91,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const checkAuth = useCallback(async () => { }, []);
 
   // Update session data (e.g., after profile edit)
-  const updateUser = useCallback(async (updates: Partial<User>) => {
+  const updateUser = useCallback(async (updates: Partial<Pick<User, 'name' | 'avatar' | 'phoneNumber'>>) => {
     await update(updates);
   }, [update]);
 

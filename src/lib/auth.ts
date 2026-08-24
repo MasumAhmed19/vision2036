@@ -6,8 +6,39 @@ import { headers } from 'next/headers';
 import { consumeRateLimit } from '@/lib/rate-limit';
 import { authConfig } from '@/lib/auth.config';
 
+const ROLE_RECHECK_INTERVAL_MS = 60 * 1000;
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
     ...authConfig,
+    callbacks: {
+        ...authConfig.callbacks,
+        async jwt(params) {
+            const token = await authConfig.callbacks!.jwt!(params);
+            if (!token) return token;
+
+            // Re-validate role/isActive against the DB. This runs only in the
+            // Node runtime (API routes, RSC via auth()) — never in edge
+            // middleware, which reuses authConfig directly without this
+            // override. Throttled so it costs one query per session per
+            // minute, not one per request.
+            const now = Date.now();
+            const checkedAt: number = Number(token.checkedAt) || 0;
+            if (params.user || now - checkedAt > ROLE_RECHECK_INTERVAL_MS) {
+                try {
+                    await connectDB();
+                    const fresh = await User.findById(token.id).select('role isActive');
+                    token.role = fresh?.role ?? token.role;
+                    token.isActive = fresh?.isActive ?? false;
+                } catch {
+                    // Transient DB error — keep the last-known values rather
+                    // than locking the user out.
+                }
+                token.checkedAt = now;
+            }
+
+            return token;
+        },
+    },
     providers: [
         Credentials({
             name: 'credentials',
