@@ -4,19 +4,13 @@ import crypto from 'crypto';
 import { auth } from '@/lib/auth';
 import connectDB from '@/lib/mongoose';
 import User from '@/models/User';
+import { sanitizeSegment, validateImageUpload } from '@/lib/upload-validation';
 
 cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
     api_key: process.env.CLOUDINARY_API_KEY,
     api_secret: process.env.CLOUDINARY_API_SECRET,
 });
-
-const MAX_FILE_SIZE = 5 * 1024 * 1024;
-
-const sanitizeSegment = (value: string) => value
-    .trim()
-    .replace(/[^a-zA-Z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
 
 // Includes the authenticated user's id and a random component so two
 // members (or two proofs from the same member, e.g. monthly + flex for the
@@ -38,23 +32,16 @@ export async function POST(request: Request) {
         }
 
         const formData = await request.formData();
-        const file = formData.get('file') as File | null;
+        const file = formData.get('file');
         const selectMonth = formData.get('selectMonth')?.toString() || '';
 
-        if (!file) {
-            return NextResponse.json({ success: false, message: 'Payment proof is required' }, { status: 400 });
+        const validation = validateImageUpload(file);
+        if (!validation.ok) {
+            return NextResponse.json({ success: false, message: validation.message.replace('File', 'Payment proof') }, { status: 400 });
         }
 
         if (!/^\d{4}-\d{2}$/.test(selectMonth)) {
             return NextResponse.json({ success: false, message: 'Invalid contribution month' }, { status: 400 });
-        }
-
-        if (!file.type.startsWith('image/')) {
-            return NextResponse.json({ success: false, message: 'Payment proof must be an image' }, { status: 400 });
-        }
-
-        if (file.size > MAX_FILE_SIZE) {
-            return NextResponse.json({ success: false, message: 'Payment proof must be smaller than 5MB' }, { status: 400 });
         }
 
         await connectDB();
@@ -65,7 +52,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 });
         }
 
-        const arrayBuffer = await file.arrayBuffer();
+        const arrayBuffer = await validation.file.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
         const publicId = buildPublicId(session.user.id, selectMonth);
 

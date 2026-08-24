@@ -2,12 +2,16 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { auth } from '@/lib/auth';
 import connectDB from '@/lib/mongoose';
-import User from '@/models/User';
+import User, { IUserDocument } from '@/models/User';
 import AuditLog from '@/models/AuditLog';
+import { withMutex } from '@/lib/mutex';
 
 const payloadSchema = z.object({
   role: z.enum(['member', 'moderator', 'admin']),
 });
+
+class NotFoundError extends Error { }
+class LastAdminError extends Error { }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -30,25 +34,48 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
     await connectDB();
 
-    const user = await User.findById(id);
-    if (!user) {
-      return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 });
-    }
+    let result: { user: IUserDocument; previousRole: string };
 
-    const previousRole = user.role;
+    try {
+      // The count-check-then-save below is only safe against concurrent
+      // demotions of *different* admins because withMutex forces them to
+      // serialize on a shared lock document — a plain countDocuments()
+      // before save() would let two concurrent requests each read a stale
+      // "2 active admins" count and both proceed, leaving zero.
+      result = await withMutex('role-change-admin-guard', async (dbSession) => {
+        const found = await User.findById(id).session(dbSession);
+        if (!found) {
+          throw new NotFoundError();
+        }
 
-    if (previousRole === 'admin' && parsed.data.role !== 'admin') {
-      const activeAdminCount = await User.countDocuments({ role: 'admin', isActive: true });
-      if (activeAdminCount <= 1) {
+        const prevRole = found.role;
+
+        if (prevRole === 'admin' && parsed.data.role !== 'admin') {
+          const activeAdminCount = await User.countDocuments({ role: 'admin', isActive: true }).session(dbSession);
+          if (activeAdminCount <= 1) {
+            throw new LastAdminError();
+          }
+        }
+
+        found.role = parsed.data.role;
+        await found.save({ session: dbSession });
+
+        return { user: found, previousRole: prevRole };
+      });
+    } catch (error) {
+      if (error instanceof NotFoundError) {
+        return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 });
+      }
+      if (error instanceof LastAdminError) {
         return NextResponse.json(
           { success: false, message: 'Cannot demote the last remaining admin' },
           { status: 400 }
         );
       }
+      throw error;
     }
 
-    user.role = parsed.data.role;
-    await user.save();
+    const { user, previousRole } = result;
 
     await AuditLog.create({
       actorId: session.user.id,

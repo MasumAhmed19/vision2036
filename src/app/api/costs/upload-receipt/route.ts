@@ -2,20 +2,13 @@ import { NextResponse } from 'next/server';
 import { v2 as cloudinary } from 'cloudinary';
 import crypto from 'crypto';
 import { auth } from '@/lib/auth';
+import { sanitizeSegment, validateImageUpload } from '@/lib/upload-validation';
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
-
-const MAX_FILE_SIZE = 5 * 1024 * 1024;
-
-const sanitizeSegment = (value: string) =>
-  value
-    .trim()
-    .replace(/[^a-zA-Z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
 
 export async function POST(request: Request) {
   try {
@@ -25,22 +18,15 @@ export async function POST(request: Request) {
     }
 
     const formData = await request.formData();
-    const file = formData.get('file') as File | null;
+    const file = formData.get('file');
     const label = formData.get('label')?.toString() || 'cost_receipt';
 
-    if (!file) {
-      return NextResponse.json({ success: false, message: 'Receipt image is required' }, { status: 400 });
+    const validation = validateImageUpload(file);
+    if (!validation.ok) {
+      return NextResponse.json({ success: false, message: validation.message.replace('File', 'Receipt') }, { status: 400 });
     }
 
-    if (!file.type.startsWith('image/')) {
-      return NextResponse.json({ success: false, message: 'Receipt must be an image' }, { status: 400 });
-    }
-
-    if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json({ success: false, message: 'Receipt must be smaller than 5MB' }, { status: 400 });
-    }
-
-    const arrayBuffer = await file.arrayBuffer();
+    const arrayBuffer = await validation.file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     const publicId = `${session.user.id}_${sanitizeSegment(label)}_${Date.now()}_${crypto.randomUUID()}`;
 

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import crypto from 'crypto';
 import connectDB from '@/lib/mongoose';
 import User from '@/models/User';
@@ -72,21 +72,33 @@ export async function POST(request: NextRequest) {
         // Build the reset link using the raw token
         const appUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
         const resetLink = `${appUrl}/reset-password?token=${rawToken}`;
+        const userId = user._id;
+        const userEmail = user.email;
+        const userName = user.name;
 
-        // Send the email (fire and forget — errors logged but don't fail the response)
-        try {
-            await sendPasswordResetEmail(user.email, user.name, resetLink);
-        } catch (emailError) {
-            console.error('Failed to send password reset email:', emailError);
-            // Clear the token so the user can try again
-            user.resetTokenHash = undefined;
-            user.resetTokenExpiry = undefined;
-            await user.save();
-            return NextResponse.json(
-                { success: false, message: 'Failed to send reset email. Please try again later.' },
-                { status: 500 }
-            );
-        }
+        // Genuinely fire-and-forget: send the email AFTER the response is
+        // sent, via Next's after() (not just an un-awaited promise, which a
+        // serverless function can kill before it resolves). This is required
+        // for the unified response above to actually stay unified — awaiting
+        // sendPasswordResetEmail (a live SMTP round-trip) before responding
+        // made active accounts measurably slower than nonexistent/inactive
+        // ones, and a send failure used to return a distinct 500, both of
+        // which reopen exactly the enumeration the generic response above is
+        // meant to prevent.
+        after(async () => {
+            try {
+                await sendPasswordResetEmail(userEmail, userName, resetLink);
+            } catch (emailError) {
+                console.error('Failed to send password reset email:', emailError);
+                try {
+                    await User.findByIdAndUpdate(userId, {
+                        $unset: { resetTokenHash: 1, resetTokenExpiry: 1 },
+                    });
+                } catch (cleanupError) {
+                    console.error('Failed to clear reset token after email failure:', cleanupError);
+                }
+            }
+        });
 
         return successResponse;
     } catch (error: any) {
