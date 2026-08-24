@@ -9,18 +9,23 @@ export async function POST(request: NextRequest) {
     try {
         // The 256-bit token itself makes brute force infeasible, but cap
         // attempts anyway — defense in depth, matching forgot-password.
+        // Fail open if the (DB-backed) limiter itself errors — see the same
+        // note in forgot-password/route.ts.
         const ip = getClientIp(request.headers);
+        try {
+            const rateLimit = await consumeRateLimit(`reset-password:${ip}`, {
+                windowMs: 15 * 60 * 1000,
+                max: 10,
+            });
 
-        const rateLimit = await consumeRateLimit(`reset-password:${ip}`, {
-            windowMs: 15 * 60 * 1000,
-            max: 10,
-        });
-
-        if (!rateLimit.success) {
-            return NextResponse.json(
-                { success: false, message: 'Too many attempts. Please wait a few minutes and try again.' },
-                { status: 429 }
-            );
+            if (!rateLimit.success) {
+                return NextResponse.json(
+                    { success: false, message: 'Too many attempts. Please wait a few minutes and try again.' },
+                    { status: 429 }
+                );
+            }
+        } catch (error) {
+            console.error('Rate limit check failed, allowing request:', error);
         }
 
         const body = await request.json();

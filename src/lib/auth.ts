@@ -59,22 +59,32 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                     throw new Error('Email and password are required');
                 }
 
-                const headersList = await headers();
-                const ip = getClientIp(headersList);
-
-                const rateLimit = await consumeRateLimit(`auth:${ip}:${String(credentials.email).toLowerCase()}`, {
-                    windowMs: 15 * 60 * 1000,
-                    max: 5,
-                });
-
-                if (!rateLimit.success) {
-                    throw new Error('Too many login attempts. Please wait a few minutes and try again.');
-                }
-
                 try {
                     await connectDB();
                 } catch {
                     throw new Error('Database is unreachable. Whitelist your IP in MongoDB Atlas, or set MONGODB_URI_LOCAL for local MongoDB.');
+                }
+
+                const headersList = await headers();
+                const ip = getClientIp(headersList);
+
+                // The rate limiter is itself backed by the DB (see rate-limit.ts).
+                // A hiccup there should never block a legitimate login attempt —
+                // fail open (allow the attempt) rather than surface a confusing
+                // error, or worse, mask the real problem behind a generic one.
+                let rateLimitOk = true;
+                try {
+                    const rateLimit = await consumeRateLimit(`auth:${ip}:${String(credentials.email).toLowerCase()}`, {
+                        windowMs: 15 * 60 * 1000,
+                        max: 5,
+                    });
+                    rateLimitOk = rateLimit.success;
+                } catch (error) {
+                    console.error('Rate limit check failed, allowing login attempt:', error);
+                }
+
+                if (!rateLimitOk) {
+                    throw new Error('Too many login attempts. Please wait a few minutes and try again.');
                 }
 
                 const user = await User.findByEmail(credentials.email as string);

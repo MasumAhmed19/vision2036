@@ -8,19 +8,25 @@ import { getClientIp } from '@/lib/request-ip';
 
 export async function POST(request: NextRequest) {
     try {
-        // Rate limit: 3 requests per 15 minutes per IP
+        // Rate limit: 3 requests per 15 minutes per IP. The limiter is itself
+        // DB-backed — a hiccup there should never block a legitimate reset
+        // request, so fail open (log and continue) rather than 500 or mask
+        // a real DB problem behind a rate-limit-shaped error.
         const ip = getClientIp(request.headers);
+        try {
+            const rateLimit = await consumeRateLimit(`forgot-password:${ip}`, {
+                windowMs: 15 * 60 * 1000,
+                max: 3,
+            });
 
-        const rateLimit = await consumeRateLimit(`forgot-password:${ip}`, {
-            windowMs: 15 * 60 * 1000,
-            max: 3,
-        });
-
-        if (!rateLimit.success) {
-            return NextResponse.json(
-                { success: false, message: 'Too many requests. Please wait a few minutes and try again.' },
-                { status: 429 }
-            );
+            if (!rateLimit.success) {
+                return NextResponse.json(
+                    { success: false, message: 'Too many requests. Please wait a few minutes and try again.' },
+                    { status: 429 }
+                );
+            }
+        } catch (error) {
+            console.error('Rate limit check failed, allowing request:', error);
         }
 
         const body = await request.json();
