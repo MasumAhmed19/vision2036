@@ -16,7 +16,14 @@ export default auth((req) => {
 
     const isPublicRoute = PUBLIC_ROUTES.some(route => pathname.startsWith(route));
     const isAdminRoute = ADMIN_ROUTES.some(route => pathname.startsWith(route));
-    const isAuthenticated = !!session?.user;
+    // A deactivated member keeps a valid JWT until it's next refreshed —
+    // treat that session as unauthenticated for routing purposes, same as
+    // no session at all. This must be folded into isAuthenticated itself
+    // (not a separate later check) — a separate check redirects deactivated
+    // sessions to /login, but the public-route branch below unconditionally
+    // sends any *authenticated* session away from /login back to '/',
+    // producing an infinite redirect loop between the two.
+    const isAuthenticated = !!session?.user && session.user.isActive !== false;
 
     // Allow public routes regardless of auth state
     if (isPublicRoute) {
@@ -27,16 +34,9 @@ export default auth((req) => {
         return NextResponse.next();
     }
 
-    // Unauthenticated users trying to access protected routes (including root) → redirect to login
+    // Unauthenticated (or deactivated) users trying to access protected
+    // routes (including root) → redirect to login
     if (!isAuthenticated) {
-        const loginUrl = new URL('/login', nextUrl);
-        loginUrl.searchParams.set('callbackUrl', pathname);
-        return NextResponse.redirect(loginUrl);
-    }
-
-    // Deactivated members keep a valid JWT until it's next refreshed — force
-    // them back to login rather than trusting the (possibly stale) token.
-    if (session?.user?.isActive === false) {
         const loginUrl = new URL('/login', nextUrl);
         loginUrl.searchParams.set('callbackUrl', pathname);
         return NextResponse.redirect(loginUrl);

@@ -27,14 +27,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             if (params.user || now - checkedAt > ROLE_RECHECK_INTERVAL_MS) {
                 try {
                     await connectDB();
-                    const fresh = await User.findById(token.id).select('role isActive sessionsValidFrom');
+                    // .lean() is required here: a full Mongoose document
+                    // applies schema defaults (default: Date.now on
+                    // sessionsValidFrom) to any *stored* document that
+                    // predates the field, at READ time — meaning every
+                    // pre-existing user would get "now" back on every
+                    // check, always failing the staleness comparison below
+                    // and locking them out. .lean() returns the raw stored
+                    // data with no defaults applied, so a genuinely-missing
+                    // field comes back as undefined, as it should.
+                    const fresh = await User.findById(token.id)
+                        .select('role isActive sessionsValidFrom')
+                        .lean();
                     token.role = fresh?.role ?? token.role;
                     token.isActive = fresh?.isActive ?? false;
 
                     // If the password was reset (or another session-invalidating
                     // event happened) after this JWT was issued, force it stale
                     // rather than let it keep working until it naturally expires.
-                    if (fresh?.sessionsValidFrom && token.iat && fresh.sessionsValidFrom.getTime() > token.iat * 1000) {
+                    if (fresh?.sessionsValidFrom && token.iat && new Date(fresh.sessionsValidFrom).getTime() > token.iat * 1000) {
                         token.isActive = false;
                     }
                 } catch {
