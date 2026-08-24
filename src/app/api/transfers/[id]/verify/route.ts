@@ -98,6 +98,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         if (status === 'REJECTED') {
             transfer.rejectionReason = rejectionReason;
             transfer.remarks = rejectionReason;
+            // Take this transfer out of the unique (initiator, selectMonth,
+            // paymentType) index (see Transfer.ts) so the member can
+            // resubmit for the same month without hitting a duplicate-key
+            // error — a rejected transfer should never block a fresh one.
+            transfer.paymentType = undefined;
         } else {
             transfer.rejectionReason = undefined;
         }

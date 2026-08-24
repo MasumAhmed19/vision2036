@@ -16,7 +16,10 @@ export interface ITransfer {
     // component — mirrors the two duplicate checks route.ts already applies,
     // now enforced by a real unique index instead of a racy findOne/create.
     // Optional at the schema level so legacy rows (pre-migration) can still
-    // be saved; every new transfer always sets it.
+    // be saved; every new PENDING/VERIFIED transfer sets it. Unset (via the
+    // verify route) the moment a transfer is REJECTED, so a rejected
+    // transfer never counts toward the unique index — see the index comment
+    // below for why status can't be filtered there directly.
     paymentType?: 'monthly' | 'flex';
     totalAmount: number;
     paymentProofUrl?: string;
@@ -35,6 +38,14 @@ export interface ITransfer {
 export interface ITransferDocument extends Omit<ITransfer, ''>, Document { }
 
 export interface ITransferModel extends Model<ITransferDocument> { }
+
+// Single source of truth for the monthly/flex classification used by the
+// duplicate-check queries, the paymentType assignment on creation, and
+// (implicitly) the unique index below — call sites must never re-derive
+// this rule independently.
+export function classifyTransferPaymentType(monthlyAmount: number): 'monthly' | 'flex' {
+    return monthlyAmount > 0 ? 'monthly' : 'flex';
+}
 
 const TransferSchema = new Schema<ITransferDocument>(
     {
@@ -125,15 +136,20 @@ TransferSchema.index({ selectMonth: 1, status: 1 });
 
 // Real, DB-enforced duplicate-payment guard (replaces the old findOne/create
 // race in route.ts, which could never actually violate a unique index because
-// none existed). `paymentType: { $exists: true }` excludes legacy rows from
-// before the backfill migration ran, so this index doesn't block saves on
-// data that hasn't been migrated yet — see scripts/backfill-transfer-payment-type.ts.
+// none existed).
+//
+// MongoDB's partialFilterExpression only supports equality, $exists: true,
+// $gt/$gte/$lt/$lte, $type, and top-level $and — NOT $ne. So "exclude
+// REJECTED transfers" can't be expressed as a status filter here directly.
+// Instead, paymentType itself is unset the moment a transfer is REJECTED
+// (see the verify route), so `paymentType: { $exists: true }` alone already
+// excludes both legacy pre-migration rows AND rejected transfers — letting
+// a member resubmit after a rejection without violating this index.
 TransferSchema.index(
     { initiator: 1, selectMonth: 1, paymentType: 1 },
     {
         unique: true,
         partialFilterExpression: {
-            status: { $ne: 'REJECTED' },
             paymentType: { $exists: true },
         },
     }

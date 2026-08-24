@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { auth } from '@/lib/auth';
 import connectDB from '@/lib/mongoose';
-import Transfer from '@/models/Transfer';
+import Transfer, { classifyTransferPaymentType } from '@/models/Transfer';
 import User from '@/models/User';
 import BankAccount from '@/models/BankAccount';
 
@@ -256,12 +256,17 @@ export async function POST(request: Request) {
             }, { status: 400 });
         }
 
-        // Check for duplicate monthly payment: block if a monthly payment already exists for this month
-        if (monthlyAmount > 0) {
+        const paymentType = classifyTransferPaymentType(monthlyAmount);
+
+        // Check for duplicate monthly payment: block if a monthly payment already exists for this month.
+        // Excludes REJECTED transfers — a rejected submission must not block resubmission,
+        // matching the unique index in Transfer.ts (which a REJECTED transfer is taken out of).
+        if (paymentType === 'monthly') {
             const existingMonthlyTransfer = await Transfer.findOne({
                 initiator: session.user.id,
                 selectMonth,
                 monthlyAmount: { $gt: 0 },
+                status: { $ne: 'REJECTED' },
             });
 
             if (existingMonthlyTransfer) {
@@ -273,12 +278,13 @@ export async function POST(request: Request) {
         }
 
         // Check for duplicate flex payment: block if a flex-only payment already exists for this month
-        if (monthlyAmount === 0 && flexAmount > 0) {
+        if (paymentType === 'flex' && flexAmount > 0) {
             const existingFlexTransfer = await Transfer.findOne({
                 initiator: session.user.id,
                 selectMonth,
                 monthlyAmount: 0,
                 flexAmount: { $gt: 0 },
+                status: { $ne: 'REJECTED' },
             });
 
             if (existingFlexTransfer) {
@@ -304,7 +310,7 @@ export async function POST(request: Request) {
             // submission is 'flex'. The unique index on this field is the
             // real duplicate guard; the findOne checks above are just for a
             // friendly error message ahead of time.
-            paymentType: monthlyAmount > 0 ? 'monthly' : 'flex',
+            paymentType,
             totalAmount,
             paymentProofUrl,
             paymentProofPublicId,
