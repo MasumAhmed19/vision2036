@@ -6,9 +6,9 @@ export interface IRateLimitEntry {
     resetAt: Date;
 }
 
-export interface IRateLimitEntryDocument extends IRateLimitEntry, Document { }
+export type IRateLimitEntryDocument = IRateLimitEntry & Document;
 
-export interface IRateLimitEntryModel extends Model<IRateLimitEntryDocument> { }
+export type IRateLimitEntryModel = Model<IRateLimitEntryDocument>;
 
 const RateLimitEntrySchema = new Schema<IRateLimitEntryDocument>(
     {
