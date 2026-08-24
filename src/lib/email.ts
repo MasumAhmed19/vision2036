@@ -1,27 +1,47 @@
 import nodemailer from 'nodemailer';
 
-const GMAIL_USER = process.env.GMAIL_USER!;
-const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD!;
-
-if (!GMAIL_USER || !GMAIL_APP_PASSWORD) {
-    throw new Error('GMAIL_USER and GMAIL_APP_PASSWORD must be set in .env.local');
+// Only escapes the handful of characters that matter inside HTML text
+// content — recipientName comes from a user-editable profile field and is
+// interpolated directly into the email body below.
+function escapeHtml(value: string): string {
+    return value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }
 
-// Reusable transporter — Gmail SMTP with App Password (free, no OAuth needed)
-const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-        user: GMAIL_USER,
-        pass: GMAIL_APP_PASSWORD,
-    },
-});
+function getTransporter() {
+    const GMAIL_USER = process.env.GMAIL_USER;
+    const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;
+
+    if (!GMAIL_USER || !GMAIL_APP_PASSWORD) {
+        // Deferred to call time so a missing env var only breaks the routes
+        // that actually send email, not every route that imports this module.
+        throw new Error('GMAIL_USER and GMAIL_APP_PASSWORD must be set in .env.local');
+    }
+
+    return {
+        gmailUser: GMAIL_USER,
+        transporter: nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: GMAIL_USER,
+                pass: GMAIL_APP_PASSWORD,
+            },
+        }),
+    };
+}
 
 export async function sendPasswordResetEmail(
     to: string,
     recipientName: string,
     resetLink: string
 ): Promise<void> {
+    const { gmailUser, transporter } = getTransporter();
     const expiryMinutes = 15;
+    const safeName = escapeHtml(recipientName);
 
     const html = `
 <!DOCTYPE html>
@@ -53,7 +73,7 @@ export async function sendPasswordResetEmail(
                 Reset your password
               </h2>
               <p style="margin:0 0 24px;font-size:15px;color:#71717a;line-height:1.6;">
-                Hi ${recipientName},
+                Hi ${safeName},
               </p>
               <p style="margin:0 0 24px;font-size:15px;color:#52525b;line-height:1.6;">
                 We received a request to reset the password for your Vision2036 account.
@@ -113,7 +133,7 @@ export async function sendPasswordResetEmail(
 `;
 
     await transporter.sendMail({
-        from: `"Vision2036" <${GMAIL_USER}>`,
+        from: `"Vision2036" <${gmailUser}>`,
         to,
         subject: 'Reset your Vision2036 password',
         html,

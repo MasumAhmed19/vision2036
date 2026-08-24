@@ -16,6 +16,9 @@ export interface IUser {
     updatedAt: Date;
     resetTokenHash?: string;
     resetTokenExpiry?: Date;
+    // Bumped whenever the password is reset. Any JWT issued before this
+    // moment is treated as stale and forced to re-authenticate (see auth.ts).
+    sessionsValidFrom: Date;
 }
 
 export interface IUserDocument extends Omit<IUser, ''>, Document {
@@ -74,6 +77,10 @@ const UserSchema = new Schema<IUserDocument>(
         },
         resetTokenExpiry: {
             type: Date,
+        },
+        sessionsValidFrom: {
+            type: Date,
+            default: Date.now,
         },
     },
     {

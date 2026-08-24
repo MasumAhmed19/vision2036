@@ -39,24 +39,18 @@ export async function POST(request: NextRequest) {
 
         const user = await User.findOne({ email: email.toLowerCase().trim() });
 
-        if (!user) {
-            return NextResponse.json(
-                { success: false, message: 'No account found with this email address.' },
-                { status: 404 }
-            );
-        }
-
-        if (!user.isActive) {
-            return NextResponse.json(
-                { success: false, message: 'This account is currently inactive. Please contact support.' },
-                { status: 400 }
-            );
-        }
-
+        // Always return the same response whether the account exists, is
+        // inactive, or the email genuinely goes out — a distinct response
+        // per case turns this endpoint into a membership oracle (an attacker
+        // can enumerate who has an account just by trying emails).
         const successResponse = NextResponse.json({
             success: true,
-            message: 'Password reset link has been sent successfully.',
+            message: "If that email is registered, you'll receive a reset link shortly.",
         });
+
+        if (!user || !user.isActive) {
+            return successResponse;
+        }
 
         // Generate a cryptographically secure random token (raw = goes in the email URL)
         const rawToken = crypto.randomBytes(32).toString('hex');

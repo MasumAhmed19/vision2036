@@ -2,9 +2,29 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import connectDB from '@/lib/mongoose';
 import User from '@/models/User';
+import { consumeRateLimit } from '@/lib/rate-limit';
 
 export async function POST(request: NextRequest) {
     try {
+        // The 256-bit token itself makes brute force infeasible, but cap
+        // attempts anyway — defense in depth, matching forgot-password.
+        const ip =
+            request.headers.get('x-forwarded-for') ||
+            request.headers.get('x-real-ip') ||
+            'unknown';
+
+        const rateLimit = consumeRateLimit(`reset-password:${ip}`, {
+            windowMs: 15 * 60 * 1000,
+            max: 10,
+        });
+
+        if (!rateLimit.success) {
+            return NextResponse.json(
+                { success: false, message: 'Too many attempts. Please wait a few minutes and try again.' },
+                { status: 429 }
+            );
+        }
+
         const body = await request.json();
         const { token, newPassword } = body;
 
@@ -47,6 +67,11 @@ export async function POST(request: NextRequest) {
         // Invalidate the token immediately (single-use enforcement)
         user.resetTokenHash = undefined;
         user.resetTokenExpiry = undefined;
+
+        // Any JWT issued before this moment is now stale — auth.ts's jwt
+        // callback compares against this on its next DB re-check and signs
+        // the old session out.
+        user.sessionsValidFrom = new Date();
 
         await user.save();
 
