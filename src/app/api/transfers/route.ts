@@ -299,6 +299,12 @@ export async function POST(request: Request) {
             transferChannel,
             monthlyAmount: monthlyAmount || 0,
             flexAmount: flexAmount || 0,
+            // Mirrors the two duplicate checks above — a monthly component
+            // (alone or combined with flex) is 'monthly'; a pure flex
+            // submission is 'flex'. The unique index on this field is the
+            // real duplicate guard; the findOne checks above are just for a
+            // friendly error message ahead of time.
+            paymentType: monthlyAmount > 0 ? 'monthly' : 'flex',
             totalAmount,
             paymentProofUrl,
             paymentProofPublicId,

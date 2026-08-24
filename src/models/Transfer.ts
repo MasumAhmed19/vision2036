@@ -11,6 +11,13 @@ export interface ITransfer {
     transferChannel: TransferChannel;
     monthlyAmount: number;
     flexAmount: number;
+    // 'monthly' whenever monthlyAmount > 0 (including a combined "pay both"
+    // submission), 'flex' only for a flex-only submission with no monthly
+    // component — mirrors the two duplicate checks route.ts already applies,
+    // now enforced by a real unique index instead of a racy findOne/create.
+    // Optional at the schema level so legacy rows (pre-migration) can still
+    // be saved; every new transfer always sets it.
+    paymentType?: 'monthly' | 'flex';
     totalAmount: number;
     paymentProofUrl?: string;
     paymentProofPublicId?: string; // Cloudinary ID
@@ -62,6 +69,10 @@ const TransferSchema = new Schema<ITransferDocument>(
             default: 0,
             min: 0,
         },
+        paymentType: {
+            type: String,
+            enum: ['monthly', 'flex'],
+        },
         totalAmount: {
             type: Number,
             required: true,
@@ -107,12 +118,26 @@ const TransferSchema = new Schema<ITransferDocument>(
 );
 
 // Indexes
-// Note: Uniqueness per (initiator, selectMonth, paymentType) is enforced at the application level
-// in route.ts to allow both a monthly AND a flex-only payment to coexist for the same month.
 TransferSchema.index({ initiator: 1, selectMonth: 1 }); // non-unique, for query performance
 TransferSchema.index({ status: 1 });
 TransferSchema.index({ transferChannel: 1, status: 1 });
 TransferSchema.index({ selectMonth: 1, status: 1 });
+
+// Real, DB-enforced duplicate-payment guard (replaces the old findOne/create
+// race in route.ts, which could never actually violate a unique index because
+// none existed). `paymentType: { $exists: true }` excludes legacy rows from
+// before the backfill migration ran, so this index doesn't block saves on
+// data that hasn't been migrated yet — see scripts/backfill-transfer-payment-type.ts.
+TransferSchema.index(
+    { initiator: 1, selectMonth: 1, paymentType: 1 },
+    {
+        unique: true,
+        partialFilterExpression: {
+            status: { $ne: 'REJECTED' },
+            paymentType: { $exists: true },
+        },
+    }
+);
 
 const Transfer = (mongoose.models.Transfer as ITransferModel) ||
     mongoose.model<ITransferDocument, ITransferModel>('Transfer', TransferSchema);
