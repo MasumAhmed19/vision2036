@@ -1,11 +1,10 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
-import { ArrowLeft, ChevronLeft, ChevronRight, FileSearch, Filter, Trash2 } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, FileSearch, Filter } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
 
 import { ProtectedRoute, TableSkeleton } from '@/components/common/LoadingStates';
 import { EmptyState } from '@/components/common/EmptyState';
@@ -37,7 +36,6 @@ export default function AuditLogsPage() {
 
 function AuditLogsContent() {
   const router = useRouter();
-  const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [actor, setActor] = useState('');
   const [action, setAction] = useState<string>('all');
@@ -62,25 +60,6 @@ function AuditLogsContent() {
     queryFn: () => auditLogsService.getLogs(queryString),
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: (deleteAll: boolean) => auditLogsService.deleteLogs({
-      actor: actor.trim() || undefined,
-      action: action !== 'all' ? action : undefined,
-      targetCollection: targetCollection !== 'all' ? targetCollection : undefined,
-      dateFrom: dateFrom || undefined,
-      dateTo: dateTo || undefined,
-      deleteAll,
-    }),
-    onSuccess: (result) => {
-      toast.success(`Deleted ${result.deletedCount} audit log${result.deletedCount === 1 ? '' : 's'}`);
-      queryClient.invalidateQueries({ queryKey: ['audit-logs'] });
-      setPage(1);
-    },
-    onError: (error: any) => {
-      toast.error(error?.response?.data?.message || 'Failed to delete audit logs');
-    },
-  });
-
   const clearFilters = () => {
     setActor('');
     setAction('all');
@@ -92,17 +71,6 @@ function AuditLogsContent() {
 
   const hasFilters = !!actor || action !== 'all' || targetCollection !== 'all' || !!dateFrom || !!dateTo;
 
-  const handleBulkDelete = (deleteAll: boolean) => {
-    const confirmed = window.confirm(
-      deleteAll
-        ? 'Delete all transfer and cost audit logs? This cannot be undone.'
-        : 'Delete all audit logs matching the current filters? This cannot be undone.'
-    );
-
-    if (!confirmed) return;
-    deleteMutation.mutate(deleteAll);
-  };
-
   return (
     <div className="space-y-6">
       <div>
@@ -111,7 +79,7 @@ function AuditLogsContent() {
           Admin Dashboard
         </Button>
         <h1 className="text-2xl font-bold tracking-tight">Audit Logs</h1>
-        <p className="text-muted-foreground">Review transfer and cost activity only. Older unrelated logs can be bulk deleted.</p>
+        <p className="text-muted-foreground">Review transfer and cost activity. The audit trail is append-only and cannot be deleted.</p>
       </div>
 
       <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-4">
@@ -155,22 +123,10 @@ function AuditLogsContent() {
         <Input type="date" value={dateFrom} onChange={(event) => { setDateFrom(event.target.value); setPage(1); }} className="w-full sm:w-40" />
         <Input type="date" value={dateTo} onChange={(event) => { setDateTo(event.target.value); setPage(1); }} className="w-full sm:w-40" />
         {hasFilters && (
-          <Button variant="ghost" size="sm" onClick={clearFilters}>
+          <Button variant="ghost" size="sm" className="ml-auto" onClick={clearFilters}>
             Clear filters
           </Button>
         )}
-        <div className="ml-auto flex flex-wrap gap-2">
-          {hasFilters && (
-            <Button variant="destructive" size="sm" onClick={() => handleBulkDelete(false)} disabled={deleteMutation.isPending}>
-              <Trash2 className="mr-2 h-4 w-4" />
-              Delete Filtered
-            </Button>
-          )}
-          <Button variant="outline" size="sm" onClick={() => handleBulkDelete(true)} disabled={deleteMutation.isPending}>
-            <Trash2 className="mr-2 h-4 w-4" />
-            Delete All
-          </Button>
-        </div>
       </div>
 
       {isLoading ? (

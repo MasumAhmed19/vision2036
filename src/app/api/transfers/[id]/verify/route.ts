@@ -87,7 +87,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         transfer.status = status;
         transfer.verifiedById = session.user.id as any;
         transfer.verifiedAt = new Date();
-        transfer.remarks = remarks;
+        // Only touch remarks if the request actually supplied one — an
+        // omitted field must not wipe out remarks left by a prior action.
+        if (remarks !== undefined) {
+            transfer.remarks = remarks;
+        }
         transfer.syncedToSheet = false;
         transfer.syncedAt = undefined;
 
