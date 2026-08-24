@@ -40,47 +40,6 @@ export async function GET() {
     }
 }
 
-// POST create a new bank account
-export async function POST(request: Request) {
-    try {
-        const session = await auth();
-        if (!session?.user) {
-            return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
-        }
-
-        const body = await request.json();
-
-        await connectDB();
-
-        const newAccount = new BankAccount({
-            userId: session.user.id,
-            ...body,
-        });
-
-        await newAccount.save(); // The pre-save hook handles the isPrimary singular logic
-
-        return NextResponse.json({
-            success: true,
-            data: {
-                id: (newAccount._id as { toString(): string }).toString(),
-                userId: (newAccount.userId as { toString(): string }).toString(),
-                bankName: newAccount.bankName,
-                accountNumber: newAccount.accountNumber,
-                accountHolderName: newAccount.accountHolderName,
-                branchName: newAccount.branchName,
-                routingNumber: newAccount.routingNumber,
-                isPrimary: newAccount.isPrimary,
-                isActive: newAccount.isActive,
-                createdAt: newAccount.createdAt,
-                updatedAt: newAccount.updatedAt,
-            },
-            message: 'Bank account added successfully',
-        }, { status: 201 });
-    } catch (error: any) {
-        console.error('Create bank account error:', error);
-        return NextResponse.json(
-            { success: false, message: error.message || 'Failed to create bank account' },
-            { status: 500 }
-        );
-    }
-}
+// POST is handled by /api/bank-accounts (root) — this route only ever served
+// GET from the client. Kept as GET-only to remove the duplicate, vulnerable
+// POST handler that used to live here (see /api/bank-accounts/route.ts).

@@ -17,29 +17,23 @@ const mapBankAccount = (account: any) => ({
   updatedAt: account.updatedAt,
 });
 
-export async function GET() {
-  try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
-    }
+// GET is served by /api/bank-accounts/me — the client never calls GET here.
 
-    await connectDB();
+const ALLOWED_FIELDS = [
+  'bankName',
+  'accountNumber',
+  'accountHolderName',
+  'branchName',
+  'routingNumber',
+  'isPrimary',
+] as const;
 
-    const bankAccounts = await BankAccount.find({ userId: session.user.id }).sort({ createdAt: -1 });
-
-    return NextResponse.json({
-      success: true,
-      data: bankAccounts.map(mapBankAccount),
-      message: 'Bank accounts fetched successfully',
-    });
-  } catch (error: any) {
-    console.error('Fetch bank accounts error:', error);
-    return NextResponse.json(
-      { success: false, message: error.message || 'Failed to fetch bank accounts' },
-      { status: 500 }
-    );
+function pickBankAccountFields(body: Record<string, unknown>) {
+  const picked: Record<string, unknown> = {};
+  for (const key of ALLOWED_FIELDS) {
+    if (body[key] !== undefined) picked[key] = body[key];
   }
+  return picked;
 }
 
 export async function POST(request: Request) {
@@ -52,9 +46,11 @@ export async function POST(request: Request) {
     const body = await request.json();
     await connectDB();
 
+    // userId always comes from the session, never from the request body —
+    // body is whitelisted first so a client-supplied `userId` can't override it.
     const newAccount = await BankAccount.create({
+      ...pickBankAccountFields(body),
       userId: session.user.id,
-      ...body,
     });
 
     return NextResponse.json(
