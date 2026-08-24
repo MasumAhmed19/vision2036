@@ -50,6 +50,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { EmptyState } from '@/components/common/EmptyState';
 import { CardLoader, ButtonLoader, ProtectedRoute } from '@/components/common/LoadingStates';
+import { UserAvatar } from '@/components/common/UserAvatar';
 import { cn } from '@/lib/utils';
 import { usersService } from '@/services';
 import { useAuth } from '@/contexts/AuthContext';
@@ -504,19 +505,7 @@ function MemberCard({
     >
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-3">
-          {user.avatar ? (
-            <img
-              src={user.avatar}
-              alt={user.name}
-              className="h-10 w-10 rounded-full object-cover"
-            />
-          ) : (
-            <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center">
-              <span className="text-lg font-semibold text-muted-foreground">
-                {user.name.charAt(0).toUpperCase()}
-              </span>
-            </div>
-          )}
+          <UserAvatar name={user.name} avatar={user.avatar} />
           <div>
             <p className="font-medium">
               {user.name}
@@ -605,19 +594,7 @@ function UserDetails({ user }: { user: User }) {
     <div className="space-y-4">
       {/* Avatar & Name */}
       <div className="flex items-center gap-4">
-        {user.avatar ? (
-          <img
-            src={user.avatar}
-            alt={user.name}
-            className="h-16 w-16 rounded-full object-cover"
-          />
-        ) : (
-          <div className="h-16 w-16 rounded-full bg-muted flex items-center justify-center">
-            <span className="text-2xl font-semibold text-muted-foreground">
-              {user.name.charAt(0).toUpperCase()}
-            </span>
-          </div>
-        )}
+        <UserAvatar name={user.name} avatar={user.avatar} className="h-16 w-16" fallbackClassName="text-2xl" />
         <div>
           <p className="text-lg font-semibold">{user.name}</p>
           <span

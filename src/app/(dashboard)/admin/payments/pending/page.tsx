@@ -31,6 +31,7 @@ import {
 } from '@/components/ui/dialog';
 import { EmptyState } from '@/components/common/EmptyState';
 import { CardLoader, ButtonLoader, ProtectedRoute } from '@/components/common/LoadingStates';
+import { UserAvatar } from '@/components/common/UserAvatar';
 import { cn } from '@/lib/utils';
 import { transfersService } from '@/services';
 import type { Transfer } from '@/types';
@@ -292,9 +293,7 @@ function PendingPaymentCard({
     <div className="rounded-lg border bg-card p-4">
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-3">
-          <div className="rounded-full bg-muted p-2">
-            <User className="h-4 w-4 text-muted-foreground" />
-          </div>
+          <UserAvatar name={transfer.user?.name} avatar={transfer.user?.avatar} />
           <div>
             <p className="font-medium">{transfer.user?.name || 'Unknown Member'}</p>
             <p className="text-sm text-muted-foreground">

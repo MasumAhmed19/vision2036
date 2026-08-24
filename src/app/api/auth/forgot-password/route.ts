@@ -37,18 +37,26 @@ export async function POST(request: NextRequest) {
 
         await connectDB();
 
-        // Always return the same response to prevent email enumeration attacks
-        const successResponse = NextResponse.json({
-            success: true,
-            message: 'If that email is registered, you will receive a password reset link shortly.',
-        });
-
         const user = await User.findOne({ email: email.toLowerCase().trim() });
 
-        // Silently exit if user not found — same response as success
-        if (!user || !user.isActive) {
-            return successResponse;
+        if (!user) {
+            return NextResponse.json(
+                { success: false, message: 'No account found with this email address.' },
+                { status: 404 }
+            );
         }
+
+        if (!user.isActive) {
+            return NextResponse.json(
+                { success: false, message: 'This account is currently inactive. Please contact support.' },
+                { status: 400 }
+            );
+        }
+
+        const successResponse = NextResponse.json({
+            success: true,
+            message: 'Password reset link has been sent successfully.',
+        });
 
         // Generate a cryptographically secure random token (raw = goes in the email URL)
         const rawToken = crypto.randomBytes(32).toString('hex');

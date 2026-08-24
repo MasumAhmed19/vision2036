@@ -136,6 +136,7 @@ export interface GlobalSummaryUserSummary {
   userId: string;
   userName: string;
   userEmail?: string;
+  userAvatar?: string | null;
   monthlyPaid: number;
   monthlyRemaining: number;
   flexiblePaid: number;
@@ -185,6 +186,7 @@ export interface UserSummary {
   userId: string;
   userName: string;
   userEmail: string;
+  userAvatar?: string | null;
   expected: number;
   paid: number;
   remaining: number;
@@ -237,6 +239,7 @@ export interface Cost {
 export interface AdminDashboardPaymentStatusMember {
   userId: string;
   name: string;
+  avatar?: string | null;
   status: 'paid' | 'partial' | 'unpaid';
   amountSubmitted: number;
   amountVerified: number;
@@ -245,6 +248,7 @@ export interface AdminDashboardPaymentStatusMember {
 export interface AdminDashboardFlexProgress {
   userId: string;
   userName: string;
+  userAvatar?: string | null;
   paid: number;
   target: number;
   progress: number;

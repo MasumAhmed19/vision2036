@@ -24,7 +24,7 @@ export async function GET() {
     const { start, end } = getYearRange(year);
 
     const [members, currentMonthTransfers, pendingCount, globalSummary, verifiedAllTime, allCosts, recentActivity, unsyncedTransfers, unsyncedCosts] = await Promise.all([
-      User.find({ isActive: true }).select('_id name'),
+      User.find({ isActive: true }).select('_id name avatar'),
       Transfer.find({ selectMonth: currentMonth }).populate('initiator', 'name'),
       Transfer.countDocuments({ status: 'PENDING' }),
       buildGlobalSummary(year),
@@ -64,6 +64,7 @@ export async function GET() {
       return {
         userId: String(member._id),
         name: member.name,
+        avatar: member.avatar ?? null,
         status,
         amountSubmitted: totals.submitted,
         amountVerified: totals.verified,
@@ -73,6 +74,7 @@ export async function GET() {
     const flexProgress = globalSummary.userSummaries.map((item) => ({
       userId: item.userId,
       userName: item.userName,
+      userAvatar: item.userAvatar ?? null,
       paid: item.flexiblePaid,
       target: policy.flexHalfMinimum,
       progress: policy.flexHalfMinimum > 0 ? Math.min(Math.round((item.flexiblePaid / policy.flexHalfMinimum) * 100), 100) : 0,

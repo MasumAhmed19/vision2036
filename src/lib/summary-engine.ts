@@ -64,7 +64,7 @@ export async function buildGlobalSummary(year: number) {
   const policy = getContributionPolicy(year);
   const { start, end } = getYearRange(year);
 
-  const members = await User.find({ isActive: true }).select('_id name email');
+  const members = await User.find({ isActive: true }).select('_id name email avatar');
   const transfers = await Transfer.find({
     status: 'VERIFIED',
     transferDate: { $gte: start, $lt: end },
@@ -118,6 +118,7 @@ export async function buildGlobalSummary(year: number) {
       userId: String(member._id),
       userName: member.name,
       userEmail: member.email,
+      userAvatar: member.avatar ?? null,
       monthlyPaid: totals.monthlyPaid,
       monthlyRemaining,
       flexiblePaid: totals.flexiblePaid,

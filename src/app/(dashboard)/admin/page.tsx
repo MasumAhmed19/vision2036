@@ -17,6 +17,7 @@ import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 
 import { ProtectedRoute, CardLoader } from '@/components/common/LoadingStates';
+import { UserAvatar } from '@/components/common/UserAvatar';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
@@ -141,11 +142,14 @@ function AdminDashboardContent() {
             {data.paymentStatus.members.map((member) => (
               <div key={member.userId} className="rounded-lg border p-3">
                 <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-medium">{member.name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      Verified Tk. {member.amountVerified.toLocaleString()}
-                    </p>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <UserAvatar name={member.name} avatar={member.avatar} className="h-9 w-9 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="font-medium truncate">{member.name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        Verified Tk. {member.amountVerified.toLocaleString()}
+                      </p>
+                    </div>
                   </div>
                   <span
                     className={cn(
@@ -222,7 +226,15 @@ function AdminDashboardContent() {
             {data.flexProgress.map((item) => (
               <div key={item.userId}>
                 <div className="mb-2 flex items-center justify-between text-sm">
-                  <span className="font-medium">{item.userName}</span>
+                  <span className="flex items-center gap-2 font-medium min-w-0">
+                    <UserAvatar
+                      name={item.userName}
+                      avatar={item.userAvatar}
+                      className="h-6 w-6 shrink-0"
+                      fallbackClassName="text-[10px]"
+                    />
+                    <span className="truncate">{item.userName}</span>
+                  </span>
                   <span className={cn(item.warning ? 'text-yellow-600' : 'text-muted-foreground')}>
                     Tk. {item.paid.toLocaleString()} / Tk. {item.target.toLocaleString()}
                   </span>

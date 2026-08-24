@@ -37,6 +37,7 @@ import {
 } from '@/components/ui/dialog';
 import { EmptyState } from '@/components/common/EmptyState';
 import { CardLoader, ProtectedRoute } from '@/components/common/LoadingStates';
+import { UserAvatar } from '@/components/common/UserAvatar';
 import { cn } from '@/lib/utils';
 import { transfersService } from '@/services';
 import type { Transfer, TransferStatus } from '@/types';
@@ -339,9 +340,12 @@ function PaymentRow({
     <tr className="hover:bg-muted/50">
       <td className="p-3">
         <div className="flex items-center gap-2">
-          <div className="rounded-full bg-muted p-1.5 hidden sm:block">
-            <User className="h-4 w-4 text-muted-foreground" />
-          </div>
+          <UserAvatar
+            name={transfer.user?.name}
+            avatar={transfer.user?.avatar}
+            className="h-8 w-8 hidden sm:flex"
+            fallbackClassName="text-xs"
+          />
           <div>
             <p className="font-medium text-sm">{transfer.user?.name || 'Unknown'}</p>
             <p className="text-xs text-muted-foreground hidden sm:block">

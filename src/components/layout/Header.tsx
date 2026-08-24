@@ -6,6 +6,7 @@ import { Logo } from '@/components/common/Logo';
 import { ThemeToggle } from '@/components/common/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { getInitials } from '@/components/common/UserAvatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,15 +19,6 @@ import Link from 'next/link';
 
 export function Header() {
   const { user, logout } = useAuth();
-
-  const getInitials = (name: string) => {
-    return name
-      .split(' ')
-      .map((n) => n[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2);
-  };
 
   const getRoleBadgeColor = (role: string) => {
     switch (role) {

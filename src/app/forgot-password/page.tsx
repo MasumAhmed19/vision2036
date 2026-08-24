@@ -99,8 +99,7 @@ export default function ForgotPasswordPage() {
                     <CheckCircle2 className="h-7 w-7 text-green-500" />
                   </div>
                   <p className="text-sm text-muted-foreground text-center max-w-xs">
-                    If <span className="font-medium text-foreground">{submittedEmail}</span> is
-                    registered, a password reset link will arrive in your inbox within a minute.
+                    A password reset link has been sent to <span className="font-medium text-foreground">{submittedEmail}</span> and should arrive within a minute.
                   </p>
                   <p className="text-xs text-muted-foreground text-center">
                     The link expires in <span className="font-medium">15 minutes</span>.

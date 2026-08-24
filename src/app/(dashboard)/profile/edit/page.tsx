@@ -24,6 +24,7 @@ import Link from 'next/link';
 import { toast } from 'react-hot-toast';
 import { Camera } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { getInitials } from '@/components/common/UserAvatar';
 
 export default function EditProfilePage() {
   const router = useRouter();
@@ -195,7 +196,7 @@ export default function EditProfilePage() {
                 <Avatar className="h-24 w-24 border-4 border-background shadow-sm">
                   <AvatarImage src={avatarPreview || user.avatar || undefined} />
                   <AvatarFallback className="text-2xl bg-muted">
-                    {user.name.charAt(0).toUpperCase()}
+                    {getInitials(user.name)}
                   </AvatarFallback>
                 </Avatar>
 

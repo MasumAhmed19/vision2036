@@ -44,3 +44,8 @@ next-env.d.ts
 DESIGN_SYSTEM.md
 
 /scripts
+# database exports (contain personal data + password hashes)
+/db-backups
+
+# internal audit notes (not for the repo)
+SECURITY_AUDIT.md

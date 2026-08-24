@@ -22,6 +22,7 @@ export async function GET(request: Request) {
         userId: item.userId,
         userName: item.userName,
         userEmail: item.userEmail || '',
+        userAvatar: item.userAvatar ?? null,
         expected: item.totalPaid + item.totalRemaining,
         paid: item.totalPaid,
         remaining: item.totalRemaining,

@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { getInitials } from '@/components/common/UserAvatar';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Mail, Phone, Calendar, Shield, Pencil, AlertTriangle, TrendingUp, CheckCircle2 } from 'lucide-react';
@@ -37,15 +38,6 @@ export default function ProfilePage() {
   }, [user]);
 
   const isLoading = isAuthLoading || isLoadingSummary;
-
-  const getInitials = (name: string) => {
-    return name
-      .split(' ')
-      .map((n) => n[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2);
-  };
 
   const getRoleBadgeVariant = (role: string) => {
     switch (role) {

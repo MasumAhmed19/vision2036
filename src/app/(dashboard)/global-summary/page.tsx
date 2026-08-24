@@ -31,6 +31,7 @@ import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/common/EmptyState';
 import { CardLoader } from '@/components/common/LoadingStates';
+import { UserAvatar } from '@/components/common/UserAvatar';
 import { cn } from '@/lib/utils';
 import { summariesService } from '@/services';
 import type { GlobalSummary, GlobalSummaryUserSummary } from '@/types';
@@ -450,9 +451,7 @@ function MemberCard({
         className="w-full p-4 flex items-center justify-between hover:bg-muted/50 transition-colors"
       >
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center font-semibold">
-            {user.userName?.charAt(0).toUpperCase() ?? '?'}
-          </div>
+          <UserAvatar name={user.userName} avatar={user.userAvatar} />
           <div className="text-left">
             <p className="font-medium">{user.userName ?? 'Unknown'}</p>
             <p className="text-sm text-muted-foreground">{progress}% complete</p>
