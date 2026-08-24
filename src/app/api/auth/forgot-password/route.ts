@@ -4,16 +4,14 @@ import connectDB from '@/lib/mongoose';
 import User from '@/models/User';
 import { sendPasswordResetEmail } from '@/lib/email';
 import { consumeRateLimit } from '@/lib/rate-limit';
+import { getClientIp } from '@/lib/request-ip';
 
 export async function POST(request: NextRequest) {
     try {
         // Rate limit: 3 requests per 15 minutes per IP
-        const ip =
-            request.headers.get('x-forwarded-for') ||
-            request.headers.get('x-real-ip') ||
-            'unknown';
+        const ip = getClientIp(request.headers);
 
-        const rateLimit = consumeRateLimit(`forgot-password:${ip}`, {
+        const rateLimit = await consumeRateLimit(`forgot-password:${ip}`, {
             windowMs: 15 * 60 * 1000,
             max: 3,
         });

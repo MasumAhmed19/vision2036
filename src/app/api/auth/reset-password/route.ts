@@ -3,17 +3,15 @@ import crypto from 'crypto';
 import connectDB from '@/lib/mongoose';
 import User from '@/models/User';
 import { consumeRateLimit } from '@/lib/rate-limit';
+import { getClientIp } from '@/lib/request-ip';
 
 export async function POST(request: NextRequest) {
     try {
         // The 256-bit token itself makes brute force infeasible, but cap
         // attempts anyway — defense in depth, matching forgot-password.
-        const ip =
-            request.headers.get('x-forwarded-for') ||
-            request.headers.get('x-real-ip') ||
-            'unknown';
+        const ip = getClientIp(request.headers);
 
-        const rateLimit = consumeRateLimit(`reset-password:${ip}`, {
+        const rateLimit = await consumeRateLimit(`reset-password:${ip}`, {
             windowMs: 15 * 60 * 1000,
             max: 10,
         });

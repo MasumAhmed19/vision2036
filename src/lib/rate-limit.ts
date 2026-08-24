@@ -1,3 +1,6 @@
+import connectDB from '@/lib/mongoose';
+import RateLimitEntry from '@/models/RateLimitEntry';
+
 type RateLimitOptions = {
   windowMs: number;
   max: number;
@@ -9,43 +12,46 @@ export type RateLimitResult = {
   resetAt: number;
 };
 
-type RateLimitEntry = {
-  count: number;
-  resetAt: number;
-};
+// Backed by a Mongo collection (with a TTL index) rather than an in-process
+// Map — a Map's counts don't survive across serverless instances/restarts,
+// which made rate limiting largely decorative in production. The update
+// uses an aggregation pipeline so the "start a new window vs increment the
+// current one" decision is made atomically in the DB, not via a separate
+// read-then-write that could race across concurrent requests.
+export async function consumeRateLimit(key: string, options: RateLimitOptions): Promise<RateLimitResult> {
+  await connectDB();
 
-const store = new Map<string, RateLimitEntry>();
+  const now = new Date();
+  const freshResetAt = new Date(now.getTime() + options.windowMs);
 
-function cleanupExpiredEntries(now: number) {
-  for (const [key, value] of store.entries()) {
-    if (value.resetAt <= now) {
-      store.delete(key);
-    }
-  }
-}
-
-export function consumeRateLimit(key: string, options: RateLimitOptions): RateLimitResult {
-  const now = Date.now();
-  cleanupExpiredEntries(now);
-
-  const existing = store.get(key);
-
-  if (!existing || existing.resetAt <= now) {
-    const resetAt = now + options.windowMs;
-    store.set(key, { count: 1, resetAt });
-    return {
-      success: true,
-      remaining: Math.max(options.max - 1, 0),
-      resetAt,
-    };
-  }
-
-  existing.count += 1;
-  store.set(key, existing);
+  const doc = await RateLimitEntry.findOneAndUpdate(
+    { key },
+    [
+      {
+        $set: {
+          count: {
+            $cond: [
+              { $or: [{ $eq: ['$resetAt', null] }, { $lte: ['$resetAt', now] }] },
+              1,
+              { $add: ['$count', 1] },
+            ],
+          },
+          resetAt: {
+            $cond: [
+              { $or: [{ $eq: ['$resetAt', null] }, { $lte: ['$resetAt', now] }] },
+              freshResetAt,
+              '$resetAt',
+            ],
+          },
+        },
+      },
+    ],
+    { upsert: true, new: true }
+  );
 
   return {
-    success: existing.count <= options.max,
-    remaining: Math.max(options.max - existing.count, 0),
-    resetAt: existing.resetAt,
+    success: doc.count <= options.max,
+    remaining: Math.max(options.max - doc.count, 0),
+    resetAt: doc.resetAt.getTime(),
   };
 }

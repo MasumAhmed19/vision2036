@@ -4,6 +4,7 @@ import connectDB from '@/lib/mongoose';
 import User from '@/models/User';
 import { headers } from 'next/headers';
 import { consumeRateLimit } from '@/lib/rate-limit';
+import { getClientIp } from '@/lib/request-ip';
 import { authConfig } from '@/lib/auth.config';
 
 const ROLE_RECHECK_INTERVAL_MS = 60 * 1000;
@@ -59,12 +60,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                 }
 
                 const headersList = await headers();
-                const ip =
-                    headersList.get('x-forwarded-for') ||
-                    headersList.get('x-real-ip') ||
-                    'unknown';
+                const ip = getClientIp(headersList);
 
-                const rateLimit = consumeRateLimit(`auth:${ip}:${String(credentials.email).toLowerCase()}`, {
+                const rateLimit = await consumeRateLimit(`auth:${ip}:${String(credentials.email).toLowerCase()}`, {
                     windowMs: 15 * 60 * 1000,
                     max: 5,
                 });
