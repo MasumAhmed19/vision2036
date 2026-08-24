@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { v2 as cloudinary } from 'cloudinary';
+import crypto from 'crypto';
 import { auth } from '@/lib/auth';
 
 cloudinary.config({
@@ -7,6 +8,8 @@ cloudinary.config({
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
+
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
 
 const sanitizeSegment = (value: string) =>
   value
@@ -29,17 +32,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: 'Receipt image is required' }, { status: 400 });
     }
 
+    if (!file.type.startsWith('image/')) {
+      return NextResponse.json({ success: false, message: 'Receipt must be an image' }, { status: 400 });
+    }
+
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json({ success: false, message: 'Receipt must be smaller than 5MB' }, { status: 400 });
+    }
+
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    const publicId = `${sanitizeSegment(label)}_${Date.now()}`;
+    const publicId = `${session.user.id}_${sanitizeSegment(label)}_${Date.now()}_${crypto.randomUUID()}`;
 
     const uploadResponse = await new Promise<any>((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
           folder: 'vision2036/cost-receipts',
           public_id: publicId,
-          overwrite: true,
-          unique_filename: false,
+          overwrite: false,
           resource_type: 'image',
         },
         (error, result) => {

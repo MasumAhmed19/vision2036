@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { v2 as cloudinary } from 'cloudinary';
+import crypto from 'crypto';
 import { auth } from '@/lib/auth';
 import connectDB from '@/lib/mongoose';
 import User from '@/models/User';
@@ -10,17 +11,22 @@ cloudinary.config({
     api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
+
 const sanitizeSegment = (value: string) => value
     .trim()
     .replace(/[^a-zA-Z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '');
 
-const buildPublicId = (memberName: string, selectMonth: string) => {
+// Includes the authenticated user's id and a random component so two
+// members (or two proofs from the same member, e.g. monthly + flex for the
+// same month) never collide on the same Cloudinary asset.
+const buildPublicId = (userId: string, selectMonth: string) => {
     const date = new Date(`${selectMonth}-01T00:00:00.000Z`);
     const monthName = date.toLocaleString('en-US', { month: 'long', timeZone: 'UTC' });
     const year = date.getUTCFullYear();
 
-    return `${sanitizeSegment(memberName)}_${sanitizeSegment(monthName)}_${year}`;
+    return `${userId}_${sanitizeSegment(monthName)}_${year}_${crypto.randomUUID()}`;
 };
 
 export async function POST(request: Request) {
@@ -43,6 +49,14 @@ export async function POST(request: Request) {
             return NextResponse.json({ success: false, message: 'Invalid contribution month' }, { status: 400 });
         }
 
+        if (!file.type.startsWith('image/')) {
+            return NextResponse.json({ success: false, message: 'Payment proof must be an image' }, { status: 400 });
+        }
+
+        if (file.size > MAX_FILE_SIZE) {
+            return NextResponse.json({ success: false, message: 'Payment proof must be smaller than 5MB' }, { status: 400 });
+        }
+
         await connectDB();
 
         const user = await User.findById(session.user.id);
@@ -53,15 +67,14 @@ export async function POST(request: Request) {
 
         const arrayBuffer = await file.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
-        const publicId = buildPublicId(user.name, selectMonth);
+        const publicId = buildPublicId(session.user.id, selectMonth);
 
         const uploadResponse = await new Promise<any>((resolve, reject) => {
             const uploadStream = cloudinary.uploader.upload_stream(
                 {
                     folder: 'vision2036/payment-proofs',
                     public_id: publicId,
-                    overwrite: true,
-                    unique_filename: false,
+                    overwrite: false,
                     resource_type: 'image',
                 },
                 (error, result) => {
