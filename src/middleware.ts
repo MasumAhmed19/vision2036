@@ -16,11 +16,30 @@ export default auth((req) => {
 
     const isPublicRoute = PUBLIC_ROUTES.some(route => pathname.startsWith(route));
     const isAdminRoute = ADMIN_ROUTES.some(route => pathname.startsWith(route));
-    // A deactivated member keeps a valid JWT until it's next refreshed —
-    // treat that session as unauthenticated for routing purposes, same as
-    // no session at all. This must be folded into isAuthenticated itself
-    // (not a separate later check) — a separate check redirects deactivated
-    // sessions to /login, but the public-route branch below unconditionally
+    // IMPORTANT — read before touching this: middleware runs on the edge
+    // runtime and decodes whatever the browser's current JWT cookie says.
+    // It does NOT call the DB. auth.ts's jwt callback re-validates role/
+    // isActive against the DB on every Node-runtime auth() call (API routes,
+    // and — critically — the /api/auth/session endpoint useSession() polls
+    // on mount and on window focus by default), and that re-validated value
+    // gets baked into a refreshed cookie at that point. So a deactivation
+    // reaches this check on the user's *next session refetch* (tab focus,
+    // page reload, or an explicit update() call) — not instantly on a tab
+    // left open and continuously focused. That's a real, bounded staleness
+    // window, not a broken check: it's still a major improvement over doing
+    // nothing (the pre-Phase-0 behavior), just not a hard real-time guarantee.
+    //
+    // The actual authorization boundary for anything that matters — every
+    // sensitive mutation (submit a payment, change a role, deactivate
+    // someone, ...) — is enforced at the API route level via auth() from
+    // '@/lib/auth', which re-checks the DB per request regardless of
+    // whether this cookie is stale. This check here is a UX layer (redirect
+    // a deactivated user out of pages sooner when we can), not the
+    // authoritative gate.
+    //
+    // Deactivated must be folded into isAuthenticated itself, not a
+    // separate later check — a separate check redirects a deactivated
+    // session to /login, but the public-route branch below unconditionally
     // sends any *authenticated* session away from /login back to '/',
     // producing an infinite redirect loop between the two.
     const isAuthenticated = !!session?.user && session.user.isActive !== false;

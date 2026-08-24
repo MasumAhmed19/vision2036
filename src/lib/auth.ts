@@ -18,9 +18,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             if (!token) return token;
 
             // Re-validate role/isActive against the DB. This runs only in the
-            // Node runtime (API routes, RSC via auth()) — never in edge
-            // middleware, which reuses authConfig directly without this
-            // override. Throttled so it costs one query per session per
+            // Node runtime (API routes, RSC via auth(), and — importantly —
+            // the /api/auth/session endpoint that useSession() polls on
+            // mount and window focus) — never in edge middleware, which
+            // reuses authConfig directly without this override and only
+            // ever sees whatever was last baked into the cookie. See the
+            // detailed note in src/middleware.ts on what that does and
+            // doesn't mean in practice. Throttled here so it costs one
+            // query per session per
             // minute, not one per request.
             const now = Date.now();
             const checkedAt: number = Number(token.checkedAt) || 0;
