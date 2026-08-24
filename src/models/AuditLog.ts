@@ -20,6 +20,7 @@ export type AuditAction =
     | 'EXPORT_EXCEL'
     | 'MEMBER_ACTIVATED'
     | 'MEMBER_DEACTIVATED'
+    | 'ROLE_CHANGED'
     | 'PASSWORD_RESET';
 
 export interface IAuditLog {
@@ -71,6 +72,7 @@ const AuditLogSchema = new Schema<IAuditLogDocument>(
                 'EXPORT_EXCEL',
                 'MEMBER_ACTIVATED',
                 'MEMBER_DEACTIVATED',
+                'ROLE_CHANGED',
                 'PASSWORD_RESET',
             ],
             required: true,
