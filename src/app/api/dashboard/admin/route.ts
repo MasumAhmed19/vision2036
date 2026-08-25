@@ -6,7 +6,9 @@ import Transfer from '@/models/Transfer';
 import Cost from '@/models/Cost';
 import AuditLog from '@/models/AuditLog';
 import { buildGlobalSummary } from '@/lib/summary-engine';
-import { getContributionPolicy, getCurrentMonthIso, getYearRange } from '@/lib/policies';
+import { getContributionPolicy, getCurrentMonthIso } from '@/lib/policies';
+import { getFundPosition } from '@/lib/ledger';
+import { fromPaisa } from '@/lib/money';
 
 export async function GET() {
   try {
@@ -21,15 +23,13 @@ export async function GET() {
     const year = now.getFullYear();
     const currentMonth = getCurrentMonthIso(now);
     const policy = getContributionPolicy(year);
-    const { start, end } = getYearRange(year);
 
-    const [members, currentMonthTransfers, pendingCount, globalSummary, verifiedAllTime, allCosts, recentActivity, unsyncedTransfers, unsyncedCosts] = await Promise.all([
+    const [members, currentMonthTransfers, pendingCount, globalSummary, fundPosition, recentActivity, unsyncedTransfers, unsyncedCosts] = await Promise.all([
       User.find({ isActive: true }).select('_id name avatar'),
       Transfer.find({ selectMonth: currentMonth }).populate('initiator', 'name'),
       Transfer.countDocuments({ status: 'PENDING' }),
       buildGlobalSummary(year),
-      Transfer.find({ status: 'VERIFIED' }),
-      Cost.find({}),
+      getFundPosition(),
       AuditLog.find({ action: { $in: ['TRANSFER_CREATED', 'TRANSFER_VERIFIED', 'TRANSFER_REJECTED', 'COST_ADDED', 'COST_UPDATED', 'COST_DELETED'] } })
         .sort({ timestamp: -1 })
         .limit(8),
@@ -81,9 +81,6 @@ export async function GET() {
       warning: now.getMonth() + 1 >= policy.flexHalfDeadlineMonth && item.flexiblePaid < policy.flexHalfMinimum,
     }));
 
-    const totalVerifiedAllTime = verifiedAllTime.reduce((sum, transfer) => sum + transfer.totalAmount, 0);
-    const totalCostsAllTime = allCosts.reduce((sum, cost) => sum + cost.amount, 0);
-
     return NextResponse.json({
       success: true,
       data: {
@@ -93,7 +90,10 @@ export async function GET() {
           targetThisMonth: members.length * policy.monthlyAmount,
           collectedThisMonth: statusGrid.reduce((sum, item) => sum + item.amountVerified, 0),
           pendingCount,
-          totalFundBalance: totalVerifiedAllTime - totalCostsAllTime,
+          // Fund value = cash + invested at cost — investing capital moves
+          // it from cash to invested, it doesn't reduce the fund's value.
+          // See getFundPosition() in src/lib/ledger.ts.
+          totalFundBalance: fromPaisa(fundPosition.fundValue),
           collectionRate: members.length > 0 ? Math.round((statusGrid.reduce((sum, item) => sum + item.amountVerified, 0) / (members.length * policy.monthlyAmount)) * 100) : 0,
         },
         paymentStatus: {

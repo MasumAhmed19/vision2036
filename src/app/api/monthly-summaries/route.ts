@@ -1,11 +1,9 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import connectDB from '@/lib/mongoose';
-import Transfer from '@/models/Transfer';
-import Cost from '@/models/Cost';
 import MonthlySummary from '@/models/MonthlySummary';
-import { getYearRange } from '@/lib/policies';
 import { rebuildMonthlySummaryForMonth } from '@/lib/summary-engine';
+import { listPeriodsWithActivity } from '@/lib/ledger';
 
 export async function GET(request: Request) {
   try {
@@ -19,14 +17,10 @@ export async function GET(request: Request) {
 
     await connectDB();
 
-    const { start, end } = getYearRange(year);
-    const [transferMonths, costRows] = await Promise.all([
-      Transfer.distinct('selectMonth', { transferDate: { $gte: start, $lt: end } }),
-      Cost.find({ date: { $gte: start, $lt: end } }).select('date'),
-    ]);
-
-    const costMonths = costRows.map((row) => new Date(row.date).toISOString().slice(0, 7));
-    const months = Array.from(new Set([...transferMonths, ...costMonths])).sort();
+    // Single accounting-month basis (period), not the old mix of
+    // transferDate-range + selectMonth-distinct + Cost.date — see
+    // listPeriodsWithActivity in src/lib/ledger.ts.
+    const months = await listPeriodsWithActivity(`${year}-01`, `${year}-12`);
 
     if (months.length > 0) {
       await Promise.all(months.map((month) => rebuildMonthlySummaryForMonth(month)));

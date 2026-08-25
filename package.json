@@ -10,7 +10,9 @@
     "seed": "npx ts-node --project tsconfig.json --skip-project scripts/seed.ts",
     "seed:2025": "npx ts-node --project tsconfig.json --skip-project --compiler-options '{\"module\":\"CommonJS\"}' scripts/seedTransfers2025.ts",
     "seed:2026": "npx ts-node --project tsconfig.json --skip-project --compiler-options '{\"module\":\"CommonJS\"}' scripts/seedTransfer2026JanFeb.ts",
-    "backfill:transfer-payment-type": "npx ts-node --project tsconfig.json --skip-project --compiler-options '{\"module\":\"CommonJS\"}' scripts/backfill-transfer-payment-type.ts"
+    "backfill:transfer-payment-type": "npx ts-node --project tsconfig.json --skip-project --compiler-options '{\"module\":\"CommonJS\"}' scripts/backfill-transfer-payment-type.ts",
+    "backfill:ledger": "npx ts-node --project tsconfig.json --skip-project --compiler-options '{\"module\":\"CommonJS\"}' scripts/backfill-ledger.ts",
+    "verify:ledger": "npx ts-node --project tsconfig.json --skip-project --compiler-options '{\"module\":\"CommonJS\"}' scripts/verify-ledger.ts"
   },
   "dependencies": {
     "@auth/mongodb-adapter": "^3.11.1",
