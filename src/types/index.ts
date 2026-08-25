@@ -105,6 +105,19 @@ export interface LedgerEntryListResponse {
   message?: string;
 }
 
+export interface GroupStatusMember {
+  id: string;
+  name: string;
+  avatar: string | null;
+  status: 'paid' | 'pending' | 'unpaid';
+  paid: number;
+}
+
+export interface GroupStatus {
+  period: string;
+  members: GroupStatusMember[];
+}
+
 export interface FundPosition {
   cash: number; // whole Taka
   investedAtCost: number;

@@ -1,5 +1,5 @@
 import api from '@/lib/api';
-import type { ApiResponse, LedgerEntry, LedgerEntryListResponse, FundPosition } from '@/types';
+import type { ApiResponse, LedgerEntry, LedgerEntryListResponse, FundPosition, GroupStatus } from '@/types';
 
 export interface CreateEntryPayload {
   type: string;
@@ -52,6 +52,12 @@ export const entriesService = {
   getFundPosition: async (throughPeriod?: string): Promise<FundPosition> => {
     const url = throughPeriod ? `/fund?throughPeriod=${throughPeriod}` : '/fund';
     const response = await api.get<ApiResponse<FundPosition>>(url);
+    return response.data.data;
+  },
+
+  getGroupStatus: async (period?: string): Promise<GroupStatus> => {
+    const url = period ? `/dashboard/group-status?period=${period}` : '/dashboard/group-status';
+    const response = await api.get<ApiResponse<GroupStatus>>(url);
     return response.data.data;
   },
 };
