@@ -13,7 +13,7 @@ export async function GET() {
 
     await connectDB();
 
-    const admins = await User.find({ role: { $in: ['admin', 'moderator'] }, isActive: true }).select('_id');
+    const admins = await User.find({ role: { $in: ['admin', 'moderator', 'co_admin'] }, isActive: true }).select('_id');
     const adminIds = admins.map((user) => user._id);
 
     const bankAccounts = await BankAccount.find({

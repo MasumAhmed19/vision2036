@@ -52,7 +52,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         
         const session = await auth();
         // Only allow admins and moderators
-        if (!session?.user?.id || !['admin', 'moderator'].includes(session.user.role)) {
+        if (!session?.user?.id || !['admin', 'moderator', 'co_admin'].includes(session.user.role)) {
             return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
         }
 

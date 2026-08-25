@@ -1,7 +1,11 @@
 import mongoose, { Document, Model, Schema } from 'mongoose';
 import bcrypt from 'bcryptjs';
 
-export type UserRole = 'member' | 'moderator' | 'admin';
+// 'co_admin' is additive (newDesign.md §6.2's Co-Admin role) — existing
+// 'moderator' users are left exactly as they are; an admin explicitly
+// assigns 'co_admin' via the existing role-change route if/when they choose
+// to, nothing here bulk-migrates anyone.
+export type UserRole = 'member' | 'moderator' | 'co_admin' | 'admin';
 
 export interface IUser {
     name: string;
@@ -53,7 +57,7 @@ const UserSchema = new Schema<IUserDocument>(
         },
         role: {
             type: String,
-            enum: ['member', 'moderator', 'admin'],
+            enum: ['member', 'moderator', 'co_admin', 'admin'],
             default: 'member',
         },
         phoneNumber: {

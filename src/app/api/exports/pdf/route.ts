@@ -30,7 +30,7 @@ export async function GET(request: Request) {
     }
 
     const { scope, year, month, userId } = parsed.data;
-    const isAdmin = ['admin', 'moderator'].includes(session.user.role);
+    const isAdmin = ['admin', 'moderator', 'co_admin'].includes(session.user.role);
 
     let fileName = 'report.pdf';
     let data;

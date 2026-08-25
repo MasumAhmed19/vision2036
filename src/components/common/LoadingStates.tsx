@@ -81,7 +81,7 @@ export function ButtonLoader() {
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
-  allowedRoles?: ('member' | 'moderator' | 'admin')[];
+  allowedRoles?: ('member' | 'moderator' | 'co_admin' | 'admin')[];
 }
 
 export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {

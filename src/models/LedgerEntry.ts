@@ -90,8 +90,8 @@ export interface ILedgerEntry {
     updatedAt: Date;
 }
 
-export interface ILedgerEntryDocument extends ILedgerEntry, Document { }
-export interface ILedgerEntryModel extends Model<ILedgerEntryDocument> { }
+export type ILedgerEntryDocument = ILedgerEntry & Document;
+export type ILedgerEntryModel = Model<ILedgerEntryDocument>;
 
 const LedgerAttachmentSchema = new Schema<ILedgerAttachment>(
     {

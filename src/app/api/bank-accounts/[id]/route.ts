@@ -12,7 +12,7 @@ async function verifyAccess(accountId: string, sessionUser: any) {
 
     // Check if user owns account or is admin
     const isOwner = account.userId.toString() === sessionUser.id;
-    const isAdmin = ['admin', 'moderator'].includes(sessionUser.role);
+    const isAdmin = ['admin', 'moderator', 'co_admin'].includes(sessionUser.role);
 
     if (!isOwner && !isAdmin) {
         return { account: null, error: 'Unauthorized', status: 403 };

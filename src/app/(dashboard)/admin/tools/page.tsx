@@ -19,7 +19,7 @@ const YEARS = Array.from({ length: new Date().getFullYear() - 2023 }, (_, index)
 
 export default function AdminToolsPage() {
   return (
-    <ProtectedRoute allowedRoles={['moderator', 'admin']}>
+    <ProtectedRoute allowedRoles={['moderator', 'co_admin', 'admin']}>
       <AdminToolsContent />
     </ProtectedRoute>
   );

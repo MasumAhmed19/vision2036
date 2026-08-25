@@ -10,7 +10,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
             return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
         }
 
-        const isAdmin = ['admin', 'moderator'].includes(session.user.role);
+        const isAdmin = ['admin', 'moderator', 'co_admin'].includes(session.user.role);
         if (!isAdmin) {
             return NextResponse.json({ success: false, message: 'Forbidden: Admins only' }, { status: 403 });
         }

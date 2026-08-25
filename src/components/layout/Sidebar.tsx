@@ -35,7 +35,7 @@ interface NavItem {
   href: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
-  roles?: ('member' | 'moderator' | 'admin')[];
+  roles?: ('member' | 'moderator' | 'co_admin' | 'admin')[];
 }
 
 const mainNavItems: NavItem[] = [
@@ -48,12 +48,12 @@ const mainNavItems: NavItem[] = [
 ];
 
 const adminNavItems: NavItem[] = [
-  { href: '/admin', label: 'Admin Dashboard', icon: LayoutDashboard, roles: ['admin', 'moderator'] },
-  { href: '/admin/payments/pending', label: 'Pending Payments', icon: ClipboardCheck, roles: ['admin', 'moderator'] },
-  { href: '/admin/payments', label: 'All Payments', icon: CreditCard, roles: ['admin', 'moderator'] },
-  { href: '/admin/costs', label: 'Costs', icon: DollarSign, roles: ['admin', 'moderator'] },
-  { href: '/admin/summaries', label: 'Monthly Summaries', icon: BarChart3, roles: ['admin', 'moderator'] },
-  { href: '/admin/tools', label: 'Admin Tools', icon: Settings2, roles: ['admin', 'moderator'] },
+  { href: '/admin', label: 'Admin Dashboard', icon: LayoutDashboard, roles: ['admin', 'moderator', 'co_admin'] },
+  { href: '/admin/payments/pending', label: 'Pending Payments', icon: ClipboardCheck, roles: ['admin', 'moderator', 'co_admin'] },
+  { href: '/admin/payments', label: 'All Payments', icon: CreditCard, roles: ['admin', 'moderator', 'co_admin'] },
+  { href: '/admin/costs', label: 'Costs', icon: DollarSign, roles: ['admin', 'moderator', 'co_admin'] },
+  { href: '/admin/summaries', label: 'Monthly Summaries', icon: BarChart3, roles: ['admin', 'moderator', 'co_admin'] },
+  { href: '/admin/tools', label: 'Admin Tools', icon: Settings2, roles: ['admin', 'moderator', 'co_admin'] },
 ];
 
 const superAdminNavItems: NavItem[] = [
@@ -75,7 +75,7 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
     queryKey: ['transfers', 'pending-count'],
     queryFn: () => transfersService.getPendingCount(),
     // Only fetch if right user role (admins)
-    enabled: !!user && ['admin', 'moderator'].includes(user.role),
+    enabled: !!user && ['admin', 'moderator', 'co_admin'].includes(user.role),
     refetchInterval: 60000, // Refetch every 60 seconds
   });
 
@@ -88,9 +88,9 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
     return pathname === href || pathname.startsWith(href + '/');
   };
 
-  const canAccess = (roles?: ('member' | 'moderator' | 'admin')[]) => {
+  const canAccess = (roles?: ('member' | 'moderator' | 'co_admin' | 'admin')[]) => {
     if (!roles || !user) return true;
-    return roles.includes(user.role as 'member' | 'moderator' | 'admin');
+    return roles.includes(user.role as 'member' | 'moderator' | 'co_admin' | 'admin');
   };
 
   const NavLink = ({ item }: { item: NavItem }) => {
@@ -136,7 +136,7 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
     return linkContent;
   };
 
-  const hasAdminAccess = user && ['admin', 'moderator'].includes(user.role);
+  const hasAdminAccess = user && ['admin', 'moderator', 'co_admin'].includes(user.role);
   const hasSuperAdminAccess = user && user.role === 'admin';
 
   return (

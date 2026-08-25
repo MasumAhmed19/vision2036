@@ -43,7 +43,7 @@ export default function DashboardPage() {
 
   if (!user) return null;
 
-  const isAdmin = ['admin', 'moderator'].includes(user.role);
+  const isAdmin = ['admin', 'moderator', 'co_admin'].includes(user.role);
 
   return (
     <div className="space-y-6">

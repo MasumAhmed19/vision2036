@@ -84,7 +84,7 @@ export function MobileNav() {
     return pathname === href || pathname.startsWith(href + '/');
   };
 
-  const hasAdminAccess = user && ['admin', 'moderator'].includes(user.role);
+  const hasAdminAccess = user && ['admin', 'moderator', 'co_admin'].includes(user.role);
   const hasSuperAdminAccess = user && user.role === 'admin';
 
   const NavLink = ({ item, onClick }: { item: NavItem; onClick?: () => void }) => (

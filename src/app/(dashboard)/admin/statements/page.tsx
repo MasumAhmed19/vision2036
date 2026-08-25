@@ -76,7 +76,7 @@ const MONTHS = [
 
 export default function StatementsPage() {
   return (
-    <ProtectedRoute allowedRoles={['moderator', 'admin']}>
+    <ProtectedRoute allowedRoles={['moderator', 'co_admin', 'admin']}>
       <StatementsContent />
     </ProtectedRoute>
   );

@@ -64,7 +64,7 @@ export default auth((req) => {
     // Admin routes but user is just a member → redirect to dashboard
     if (isAdminRoute) {
         const userRole = session?.user?.role as string | undefined;
-        const hasAdminAccess = ['admin', 'moderator'].includes(userRole || '');
+        const hasAdminAccess = ['admin', 'moderator', 'co_admin'].includes(userRole || '');
         if (!hasAdminAccess) {
             return NextResponse.redirect(new URL('/', nextUrl));
         }

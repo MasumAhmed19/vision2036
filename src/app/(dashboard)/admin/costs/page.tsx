@@ -58,7 +58,7 @@ const emptyForm = (): CostFormState => ({
 
 export default function AdminCostsPage() {
   return (
-    <ProtectedRoute allowedRoles={['moderator', 'admin']}>
+    <ProtectedRoute allowedRoles={['moderator', 'co_admin', 'admin']}>
       <AdminCostsContent />
     </ProtectedRoute>
   );

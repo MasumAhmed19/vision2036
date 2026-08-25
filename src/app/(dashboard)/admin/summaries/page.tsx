@@ -27,7 +27,7 @@ const YEARS = generateYears();
 
 export default function AdminSummariesPage() {
   return (
-    <ProtectedRoute allowedRoles={['moderator', 'admin']}>
+    <ProtectedRoute allowedRoles={['moderator', 'co_admin', 'admin']}>
       <AdminSummariesContent />
     </ProtectedRoute>
   );

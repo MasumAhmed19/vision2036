@@ -26,7 +26,7 @@ import { cn } from '@/lib/utils';
 
 export default function AdminDashboardPage() {
   return (
-    <ProtectedRoute allowedRoles={['moderator', 'admin']}>
+    <ProtectedRoute allowedRoles={['moderator', 'co_admin', 'admin']}>
       <AdminDashboardContent />
     </ProtectedRoute>
   );

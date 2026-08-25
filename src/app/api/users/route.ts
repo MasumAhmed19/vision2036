@@ -7,7 +7,7 @@ import User from '@/models/User';
 const querySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(12),
-  role: z.enum(['member', 'moderator', 'admin']).optional(),
+  role: z.enum(['member', 'moderator', 'co_admin', 'admin']).optional(),
   isActive: z.coerce.boolean().optional(),
   search: z.string().trim().optional(),
 });
@@ -15,7 +15,7 @@ const querySchema = z.object({
 export async function GET(request: Request) {
   try {
     const session = await auth();
-    if (!session?.user?.id || !['admin', 'moderator'].includes(session.user.role)) {
+    if (!session?.user?.id || !['admin', 'moderator', 'co_admin'].includes(session.user.role)) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
 

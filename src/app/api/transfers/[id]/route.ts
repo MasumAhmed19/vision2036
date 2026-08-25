@@ -62,7 +62,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
             return NextResponse.json({ success: false, message: 'Transfer not found' }, { status: 404 });
         }
 
-        const isPrivileged = ['admin', 'moderator'].includes(session.user.role);
+        const isPrivileged = ['admin', 'moderator', 'co_admin'].includes(session.user.role);
         const initiatorId = typeof transfer.initiator === 'object'
             ? transfer.initiator._id.toString()
             : transfer.initiator?.toString?.();

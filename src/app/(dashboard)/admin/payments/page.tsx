@@ -64,7 +64,7 @@ const ITEMS_PER_PAGE = 12;
 
 export default function AllPaymentsPage() {
   return (
-    <ProtectedRoute allowedRoles={['moderator', 'admin']}>
+    <ProtectedRoute allowedRoles={['moderator', 'co_admin', 'admin']}>
       <AllPaymentsContent />
     </ProtectedRoute>
   );

@@ -13,6 +13,7 @@ import {
   Phone,
   Shield,
   ShieldCheck,
+  ShieldPlus,
   ShieldAlert,
   CheckCircle2,
   XCircle,
@@ -66,6 +67,11 @@ const ROLE_CONFIG: Record<UserRole, { label: string; icon: React.ElementType; cl
     label: 'Moderator',
     icon: ShieldCheck,
     className: 'bg-purple-500/10 text-purple-600 dark:text-purple-500',
+  },
+  co_admin: {
+    label: 'Co-Admin',
+    icon: ShieldPlus,
+    className: 'bg-amber-500/10 text-amber-600 dark:text-amber-500',
   },
   admin: {
     label: 'Admin',
@@ -233,6 +239,7 @@ function MembersContent() {
             <SelectItem value="all">All Roles</SelectItem>
             <SelectItem value="member">Member</SelectItem>
             <SelectItem value="moderator">Moderator</SelectItem>
+            <SelectItem value="co_admin">Co-Admin</SelectItem>
             <SelectItem value="admin">Admin</SelectItem>
           </SelectContent>
         </Select>
@@ -416,6 +423,7 @@ function MembersContent() {
                   <SelectContent>
                     <SelectItem value="member">Member</SelectItem>
                     <SelectItem value="moderator">Moderator</SelectItem>
+                    <SelectItem value="co_admin">Co-Admin</SelectItem>
                     <SelectItem value="admin">Admin</SelectItem>
                   </SelectContent>
                 </Select>

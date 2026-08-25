@@ -38,7 +38,7 @@ import type { Transfer } from '@/types';
 
 export default function PendingPaymentsPage() {
   return (
-    <ProtectedRoute allowedRoles={['moderator', 'admin']}>
+    <ProtectedRoute allowedRoles={['moderator', 'co_admin', 'admin']}>
       <PendingPaymentsContent />
     </ProtectedRoute>
   );

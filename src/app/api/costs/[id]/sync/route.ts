@@ -8,7 +8,7 @@ import { syncCostToGoogleSheets } from '@/lib/google-sheets';
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await auth();
-    if (!session?.user?.id || !['admin', 'moderator'].includes(session.user.role)) {
+    if (!session?.user?.id || !['admin', 'moderator', 'co_admin'].includes(session.user.role)) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
 

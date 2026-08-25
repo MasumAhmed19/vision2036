@@ -7,7 +7,7 @@ import AuditLog from '@/models/AuditLog';
 import { withMutex } from '@/lib/mutex';
 
 const payloadSchema = z.object({
-  role: z.enum(['member', 'moderator', 'admin']),
+  role: z.enum(['member', 'moderator', 'co_admin', 'admin']),
 });
 
 class NotFoundError extends Error { }
