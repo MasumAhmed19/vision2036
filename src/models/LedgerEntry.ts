@@ -71,6 +71,9 @@ export interface ILedgerEntry {
     reversedBy?: mongoose.Types.ObjectId | string;
 
     createdBy: mongoose.Types.ObjectId | string;
+    // Computed once at creation (from Policy at that time) so a later policy
+    // change never retroactively changes what an in-flight entry needs.
+    requiredApprovals: number;
     approvals: ILedgerApproval[];
     postedAt?: Date;
     rejectedBy?: mongoose.Types.ObjectId | string;
@@ -147,6 +150,9 @@ const LedgerEntrySchema = new Schema<ILedgerEntryDocument>(
         reversedBy: { type: Schema.Types.ObjectId, ref: 'LedgerEntry' },
 
         createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+        // 0 for entries created already-POSTED (the backfill script) — they
+        // never go through the approval workflow at all.
+        requiredApprovals: { type: Number, default: 0, min: 0 },
         approvals: { type: [LedgerApprovalSchema], default: [] },
         postedAt: { type: Date },
         rejectedBy: { type: Schema.Types.ObjectId, ref: 'User' },

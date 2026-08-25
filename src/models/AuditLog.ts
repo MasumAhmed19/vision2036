@@ -21,7 +21,11 @@ export type AuditAction =
     | 'MEMBER_ACTIVATED'
     | 'MEMBER_DEACTIVATED'
     | 'ROLE_CHANGED'
-    | 'PASSWORD_RESET';
+    | 'PASSWORD_RESET'
+    | 'LEDGER_ENTRY_CREATED'
+    | 'LEDGER_ENTRY_APPROVED'
+    | 'LEDGER_ENTRY_REJECTED'
+    | 'LEDGER_ENTRY_REVERSED';
 
 export interface IAuditLog {
     actorId: mongoose.Types.ObjectId | string;
@@ -74,6 +78,10 @@ const AuditLogSchema = new Schema<IAuditLogDocument>(
                 'MEMBER_DEACTIVATED',
                 'ROLE_CHANGED',
                 'PASSWORD_RESET',
+                'LEDGER_ENTRY_CREATED',
+                'LEDGER_ENTRY_APPROVED',
+                'LEDGER_ENTRY_REJECTED',
+                'LEDGER_ENTRY_REVERSED',
             ],
             required: true,
         },

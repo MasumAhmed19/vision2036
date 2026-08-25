@@ -172,6 +172,11 @@ async function getCostItemsInRange(startPeriod: string, endPeriod: string) {
     status: 'POSTED',
     period: { $gte: startPeriod, $lte: endPeriod },
     type: { $in: ['BANK_CHARGE', 'OPERATIONAL_COST', 'INVESTMENT_OUT'] },
+    // Excludes a reversal of one of these (same type, opposite direction) —
+    // the reversed original already disappears from this list on its own
+    // (its status becomes REVERSED, not POSTED); the reversal entry itself
+    // is a credit, not a cost, so it doesn't belong in this list either.
+    direction: 'DEBIT',
   }).sort({ valueDate: 1 });
 
   const TYPE_TO_CATEGORY: Record<string, string> = {

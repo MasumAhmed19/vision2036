@@ -1,5 +1,5 @@
 import connectDB from '@/lib/mongoose';
-import LedgerEntry from '@/models/LedgerEntry';
+import LedgerEntry, { CREDIT_TYPES } from '@/models/LedgerEntry';
 
 export interface FundPosition {
     cash: number; // paisa
@@ -80,13 +80,26 @@ const TYPE_TO_AGGREGATE_KEY: Record<string, keyof PeriodAggregate> = {
     INVESTMENT_PRINCIPAL_BACK: 'investmentPrincipalBack',
 };
 
-/** Sums for entries whose `period` is exactly this one 'YYYY-MM' month (not cumulative). */
+/**
+ * Sums for entries whose `period` is exactly this one 'YYYY-MM' month (not
+ * cumulative). Groups by (type, direction), not type alone — a reversal is
+ * the opposite direction of the same type (see the entries/[id]/reverse
+ * route), and this nets it out rather than double-counting it. This is
+ * exactly what getFundPosition already does for the overall cash figure;
+ * this just applies the same rule per category.
+ */
 export async function getPeriodAggregate(period: string): Promise<PeriodAggregate> {
     await connectDB();
 
     const rows = await LedgerEntry.aggregate([
         { $match: { status: 'POSTED', period } },
-        { $group: { _id: '$type', total: { $sum: '$amount' } } },
+        {
+            $group: {
+                _id: '$type',
+                creditSum: { $sum: { $cond: [{ $eq: ['$direction', 'CREDIT'] }, '$amount', 0] } },
+                debitSum: { $sum: { $cond: [{ $eq: ['$direction', 'DEBIT'] }, '$amount', 0] } },
+            },
+        },
     ]);
 
     const base: PeriodAggregate = {
@@ -104,10 +117,16 @@ export async function getPeriodAggregate(period: string): Promise<PeriodAggregat
     };
 
     for (const row of rows) {
-        const key = TYPE_TO_AGGREGATE_KEY[row._id as string];
-        if (key) {
-            (base[key] as number) = row.total;
-        }
+        const type = row._id as string;
+        const key = TYPE_TO_AGGREGATE_KEY[type];
+        if (!key) continue;
+
+        const isCreditType = (CREDIT_TYPES as string[]).includes(type);
+        // A normal entry of a CREDIT-type moves money the "credit" way; a
+        // reversal of it is booked as a DEBIT of the same type, so net =
+        // credit - debit correctly subtracts it out (and symmetrically for
+        // DEBIT-type entries and their reversals).
+        base[key] = isCreditType ? row.creditSum - row.debitSum : row.debitSum - row.creditSum;
     }
 
     base.totalCollected = base.contributionsMonthly + base.contributionsFlex;
@@ -144,12 +163,17 @@ export async function getMemberContributionsInRange(
     };
     if (memberId) match.memberId = memberId;
 
+    // Net credit-minus-debit per (member, type) — a reversal of a
+    // contribution is booked as a DEBIT of the same type (see the
+    // entries/[id]/reverse route), so this correctly nets it out rather
+    // than double-counting it, same as getPeriodAggregate.
     const rows = await LedgerEntry.aggregate([
         { $match: match },
         {
             $group: {
                 _id: { memberId: '$memberId', type: '$type' },
-                total: { $sum: '$amount' },
+                creditSum: { $sum: { $cond: [{ $eq: ['$direction', 'CREDIT'] }, '$amount', 0] } },
+                debitSum: { $sum: { $cond: [{ $eq: ['$direction', 'DEBIT'] }, '$amount', 0] } },
             },
         },
     ]);
@@ -158,8 +182,9 @@ export async function getMemberContributionsInRange(
     for (const row of rows) {
         const memberId = String(row._id.memberId);
         const entry = byMember.get(memberId) ?? { memberId, monthlyPaid: 0, flexiblePaid: 0 };
-        if (row._id.type === 'CONTRIBUTION_MONTHLY') entry.monthlyPaid = row.total;
-        else entry.flexiblePaid = row.total;
+        const net = row.creditSum - row.debitSum;
+        if (row._id.type === 'CONTRIBUTION_MONTHLY') entry.monthlyPaid = net;
+        else entry.flexiblePaid = net;
         byMember.set(memberId, entry);
     }
 
