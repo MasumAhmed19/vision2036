@@ -2,25 +2,11 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import {
-  LayoutDashboard,
-  CreditCard,
-  Building2,
-  BarChart3,
-  DollarSign,
-  Globe,
-  Users,
-  ClipboardCheck,
-  Settings2,
-  ShieldCheck,
-  ChevronLeft,
-  ChevronRight,
-} from 'lucide-react';
+import { Home, ScrollText, Users, TrendingUp, MoreHorizontal, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useAuth } from '@/contexts/AuthContext';
 import { Logo } from '@/components/common/Logo';
+import { Money } from '@/components/common/Money';
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
 import {
   Tooltip,
   TooltipContent,
@@ -29,36 +15,22 @@ import {
 } from '@/components/ui/tooltip';
 import { Badge } from '@/components/ui/badge';
 import { useQuery } from '@tanstack/react-query';
-import { transfersService } from '@/services';
+import { entriesService } from '@/services';
+import { usePendingApprovalsCount } from '@/hooks/usePendingApprovals';
 
 interface NavItem {
   href: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
-  roles?: ('member' | 'moderator' | 'co_admin' | 'admin')[];
 }
 
-const mainNavItems: NavItem[] = [
-  { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/payments', label: 'My Payments', icon: CreditCard },
-  { href: '/bank-accounts', label: 'Bank Accounts', icon: Building2 },
-  { href: '/summaries', label: 'My Summary', icon: BarChart3 },
-  { href: '/global-summary', label: 'Global Summary', icon: Globe },
-  // { href: '/statements', label: 'Bank Statements', icon: FileText },
-];
-
-const adminNavItems: NavItem[] = [
-  { href: '/admin', label: 'Admin Dashboard', icon: LayoutDashboard, roles: ['admin', 'moderator', 'co_admin'] },
-  { href: '/admin/payments/pending', label: 'Pending Payments', icon: ClipboardCheck, roles: ['admin', 'moderator', 'co_admin'] },
-  { href: '/admin/payments', label: 'All Payments', icon: CreditCard, roles: ['admin', 'moderator', 'co_admin'] },
-  { href: '/admin/costs', label: 'Costs', icon: DollarSign, roles: ['admin', 'moderator', 'co_admin'] },
-  { href: '/admin/summaries', label: 'Monthly Summaries', icon: BarChart3, roles: ['admin', 'moderator', 'co_admin'] },
-  { href: '/admin/tools', label: 'Admin Tools', icon: Settings2, roles: ['admin', 'moderator', 'co_admin'] },
-];
-
-const superAdminNavItems: NavItem[] = [
-  { href: '/admin/members', label: 'Members', icon: Users, roles: ['admin'] },
-  { href: '/admin/audit-logs', label: 'Audit Logs', icon: ShieldCheck, roles: ['admin'] },
+// Visible to everyone regardless of role — see the same note in MobileNav.tsx.
+const TABS: NavItem[] = [
+  { href: '/', label: 'Home', icon: Home },
+  { href: '/ledger', label: 'Ledger', icon: ScrollText },
+  { href: '/members', label: 'Members', icon: Users },
+  { href: '/fund', label: 'Fund', icon: TrendingUp },
+  { href: '/more', label: 'More', icon: MoreHorizontal },
 ];
 
 interface SidebarProps {
@@ -68,43 +40,28 @@ interface SidebarProps {
 
 export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
   const pathname = usePathname();
-  const { user } = useAuth();
+  const pendingCount = usePendingApprovalsCount();
 
-  // Fetch count of pending transfers
-  const { data: pendingCountData } = useQuery({
-    queryKey: ['transfers', 'pending-count'],
-    queryFn: () => transfersService.getPendingCount(),
-    // Only fetch if right user role (admins)
-    enabled: !!user && ['admin', 'moderator', 'co_admin'].includes(user.role),
-    refetchInterval: 60000, // Refetch every 60 seconds
+  const { data: fundPosition } = useQuery({
+    queryKey: ['fund', 'position'],
+    queryFn: () => entriesService.getFundPosition(),
+    staleTime: 60000,
   });
-
-  const pendingCount = pendingCountData?.count || 0;
 
   const isActive = (href: string) => {
     if (href === '/') return pathname === '/';
-    // Exact match for specific routes that have sub-routes
-    if (href === '/admin' || href === '/admin/payments') return pathname === href;
     return pathname === href || pathname.startsWith(href + '/');
   };
 
-  const canAccess = (roles?: ('member' | 'moderator' | 'co_admin' | 'admin')[]) => {
-    if (!roles || !user) return true;
-    return roles.includes(user.role as 'member' | 'moderator' | 'co_admin' | 'admin');
-  };
-
   const NavLink = ({ item }: { item: NavItem }) => {
-    if (!canAccess(item.roles)) return null;
-
+    const active = isActive(item.href);
     const linkContent = (
       <Link
         href={item.href}
         className={cn(
           'flex items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-colors',
           'hover:bg-accent hover:text-accent-foreground',
-          isActive(item.href)
-            ? 'bg-accent text-accent-foreground'
-            : 'text-muted-foreground',
+          active ? 'bg-accent text-accent-foreground' : 'text-muted-foreground',
           isCollapsed && 'justify-center px-2'
         )}
       >
@@ -113,8 +70,7 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
           {!isCollapsed && <span>{item.label}</span>}
         </div>
 
-        {/* Render notification badge for Pending Payments */}
-        {!isCollapsed && item.href === '/admin/payments/pending' && pendingCount > 0 && (
+        {!isCollapsed && item.href === '/' && pendingCount > 0 && (
           <Badge variant="destructive" className="ml-auto w-5 h-5 flex p-0 items-center justify-center rounded-full text-[10px]">
             {pendingCount > 99 ? '99+' : pendingCount}
           </Badge>
@@ -127,7 +83,7 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
         <Tooltip delayDuration={0}>
           <TooltipTrigger asChild>{linkContent}</TooltipTrigger>
           <TooltipContent side="right">
-            {item.label} {item.href === '/admin/payments/pending' && pendingCount > 0 ? `(${pendingCount})` : ''}
+            {item.label} {item.href === '/' && pendingCount > 0 ? `(${pendingCount})` : ''}
           </TooltipContent>
         </Tooltip>
       );
@@ -135,9 +91,6 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
 
     return linkContent;
   };
-
-  const hasAdminAccess = user && ['admin', 'moderator', 'co_admin'].includes(user.role);
-  const hasSuperAdminAccess = user && user.role === 'admin';
 
   return (
     <TooltipProvider>
@@ -155,39 +108,23 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
           <Logo showText={!isCollapsed} size={isCollapsed ? 'sm' : 'md'} />
         </div>
 
+        {/* Persistent fund-value header (newDesign.md §9.2) */}
+        {!isCollapsed && (
+          <div className="border-b px-4 py-3">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">Fund value</p>
+            {fundPosition ? (
+              <Money value={fundPosition.fundValue} className="text-lg font-semibold" />
+            ) : (
+              <span className="text-lg font-semibold text-muted-foreground">···</span>
+            )}
+          </div>
+        )}
+
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto p-3 space-y-1">
-          {mainNavItems.map((item) => (
+          {TABS.map((item) => (
             <NavLink key={item.href} item={item} />
           ))}
-
-          {hasAdminAccess && (
-            <>
-              <Separator className="my-3" />
-              {!isCollapsed && (
-                <p className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                  Admin
-                </p>
-              )}
-              {adminNavItems.map((item) => (
-                <NavLink key={item.href} item={item} />
-              ))}
-            </>
-          )}
-
-          {hasSuperAdminAccess && (
-            <>
-              <Separator className="my-3" />
-              {!isCollapsed && (
-                <p className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                  Super Admin
-                </p>
-              )}
-              {superAdminNavItems.map((item) => (
-                <NavLink key={item.href} item={item} />
-              ))}
-            </>
-          )}
         </nav>
 
         {/* Collapse Toggle */}

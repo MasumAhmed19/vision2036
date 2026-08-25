@@ -176,7 +176,10 @@ export const GET = withAuth({}, async ({ request }) => {
 
     const [entries, total] = await Promise.all([
         LedgerEntry.find(query)
-            .sort({ createdAt: -1 })
+            // period first so the Ledger screen can group rows by month
+            // without re-sorting client-side; valueDate breaks ties within
+            // a month.
+            .sort({ period: -1, valueDate: -1, createdAt: -1 })
             .skip((page - 1) * limit)
             .limit(limit),
         LedgerEntry.countDocuments(query),

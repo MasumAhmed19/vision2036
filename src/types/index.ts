@@ -43,6 +43,85 @@ export interface PaginatedResponse<T> {
   };
 }
 
+// Ledger (unified fund entries — Phase 1/2 of the redesign) types
+export type LedgerDirection = 'CREDIT' | 'DEBIT';
+export type LedgerEntryType =
+  | 'CONTRIBUTION_MONTHLY'
+  | 'CONTRIBUTION_FLEX'
+  | 'INTEREST_BANK'
+  | 'INVESTMENT_RETURN'
+  | 'INVESTMENT_PRINCIPAL_BACK'
+  | 'BANK_CHARGE'
+  | 'OPERATIONAL_COST'
+  | 'INVESTMENT_OUT'
+  | 'WITHDRAWAL'
+  | 'ADJUSTMENT';
+export type LedgerEntryStatus = 'DRAFT' | 'PENDING' | 'POSTED' | 'REJECTED' | 'REVERSED';
+
+export interface LedgerAttachment {
+  url: string;
+  publicId?: string;
+  kind: 'SCREENSHOT' | 'RECEIPT' | 'STATEMENT';
+  uploadedAt: string;
+  uploadedBy: string;
+}
+
+export interface LedgerApproval {
+  by: string;
+  at: string;
+  note?: string;
+}
+
+export interface LedgerEntry {
+  id: string;
+  direction: LedgerDirection;
+  type: LedgerEntryType;
+  status: LedgerEntryStatus;
+  amount: number; // whole Taka
+  memberId: string | null;
+  period: string; // 'YYYY-MM'
+  valueDate: string;
+  title: string;
+  note?: string;
+  channel?: string;
+  attachments: LedgerAttachment[];
+  reversalOf: string | null;
+  reversedBy: string | null;
+  createdBy: string;
+  requiredApprovals: number;
+  approvals: LedgerApproval[];
+  postedAt?: string;
+  rejectedBy: string | null;
+  rejectedAt?: string;
+  rejectionReason?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LedgerEntryListResponse {
+  success: boolean;
+  data: LedgerEntry[];
+  meta: { page: number; limit: number; total: number; totalPages: number };
+  message?: string;
+}
+
+export interface FundPosition {
+  cash: number; // whole Taka
+  investedAtCost: number;
+  fundValue: number;
+}
+
+// The public member directory (GET /api/members) — minimal, safe for every
+// member to see about every other member. Distinct from the full `User`
+// shape (which includes email/phoneNumber and is admin-only via /api/users).
+export interface PublicMember {
+  id: string;
+  name: string;
+  avatar: string | null;
+  role: UserRole;
+  joinedAt: string;
+}
+
 // Bank Account types
 export interface BankAccount {
   id: string;

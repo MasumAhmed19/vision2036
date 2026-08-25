@@ -11,3 +11,5 @@ export * from './policies';
 export * from './auditLogs';
 export * from './adminTools';
 export * from './exports';
+export * from './entries';
+export * from './members';
