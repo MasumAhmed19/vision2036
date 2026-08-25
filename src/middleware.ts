@@ -75,8 +75,14 @@ export default auth((req) => {
 });
 
 export const config = {
-    // Match all routes except static files, _next, and API routes
+    // Match all routes except static files, _next, and API routes.
+    // sw.js must be excluded: it's fetched by the browser before/without
+    // auth (the PWA registers it on every visit, including the login page),
+    // so gating it behind auth turned every registration into a redirect to
+    // /login — "the script resource is behind a redirect" — and silently
+    // broke the service worker for any visitor without a session, which
+    // also blocks push notifications from ever working.
     matcher: [
-        '/((?!api|_next/static|_next/image|favicon.ico|manifest.json|icons|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp)).*)',
+        '/((?!api|_next/static|_next/image|favicon.ico|manifest.json|sw\\.js|icons|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp)).*)',
     ],
 };

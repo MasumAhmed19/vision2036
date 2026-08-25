@@ -84,8 +84,11 @@ export interface ILedgerEntry {
     // scripts/backfill-ledger.ts) — never on entries created going forward
     // through /api/entries. Lets the backfill be safely re-run: it skips
     // any Transfer/Cost document it already created an entry for.
+    // Field is `sourceType`, not `collection` — `collection` is a reserved
+    // Mongoose Document property name and using it as a schema path throws
+    // a runtime warning ("may break some functionality").
     source?: {
-        collection: 'Transfer' | 'Cost';
+        sourceType: 'Transfer' | 'Cost';
         id: mongoose.Types.ObjectId | string;
     };
 
@@ -162,7 +165,7 @@ const LedgerEntrySchema = new Schema<ILedgerEntryDocument>(
         source: {
             type: new Schema(
                 {
-                    collection: { type: String, enum: ['Transfer', 'Cost'], required: true },
+                    sourceType: { type: String, enum: ['Transfer', 'Cost'], required: true },
                     id: { type: Schema.Types.ObjectId, required: true },
                 },
                 { _id: false }
@@ -183,7 +186,7 @@ LedgerEntrySchema.index({ type: 1, valueDate: -1 });
 // be part of the key, not just the source id. Sparse because entries
 // created going forward (via /api/entries) have no `source` at all.
 LedgerEntrySchema.index(
-    { 'source.collection': 1, 'source.id': 1, type: 1 },
+    { 'source.sourceType': 1, 'source.id': 1, type: 1 },
     { unique: true, sparse: true }
 );
 

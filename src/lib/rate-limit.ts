@@ -54,7 +54,13 @@ export async function consumeRateLimit(key: string, options: RateLimitOptions): 
           },
         },
       ],
-      { upsert: true, new: true }
+      // updatePipeline: true is required by this Mongoose version to accept
+      // an aggregation-pipeline update (an array) — without it,
+      // findOneAndUpdate throws "Cannot pass an array to query updates
+      // unless the `updatePipeline` option is set", which the catch below
+      // was silently swallowing (fail-open) since this was written — the
+      // rate limiter has never actually limited anything until this fix.
+      { upsert: true, returnDocument: 'after', updatePipeline: true }
     );
 
     return {
