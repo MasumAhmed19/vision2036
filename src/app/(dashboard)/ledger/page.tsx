@@ -1,15 +1,26 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
+import { toast } from 'react-hot-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { entriesService, membersService } from '@/services';
 import { EntryRow, type EntryRowData } from '@/components/common/EntryRow';
 import { PeriodHeader } from '@/components/common/PeriodHeader';
 import { EmptyState } from '@/components/common/EmptyState';
-import { CardSkeleton } from '@/components/common/LoadingStates';
+import { CardSkeleton, ButtonLoader } from '@/components/common/LoadingStates';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { ScrollText } from 'lucide-react';
 import type { LedgerEntry, LedgerEntryType } from '@/types';
 
@@ -30,7 +41,24 @@ function entryKind(entry: LedgerEntry): EntryRowData['kind'] {
 
 export default function LedgerPage() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [filter, setFilter] = useState<FilterKey>('all');
+  const [reverseTarget, setReverseTarget] = useState<LedgerEntry | null>(null);
+  const [reverseReason, setReverseReason] = useState('');
+  const canReverse = user?.role === 'co_admin' || user?.role === 'admin';
+
+  const reverseMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => entriesService.reverseEntry(id, reason),
+    onSuccess: () => {
+      toast.success('Entry reversed');
+      setReverseTarget(null);
+      setReverseReason('');
+      queryClient.invalidateQueries({ queryKey: ['entries'] });
+      queryClient.invalidateQueries({ queryKey: ['fund'] });
+      queryClient.invalidateQueries({ queryKey: ['investments'] });
+    },
+    onError: (error: any) => toast.error(error?.response?.data?.message || 'Failed to reverse'),
+  });
 
   const { data: membersList } = useQuery({
     queryKey: ['members'],
@@ -124,13 +152,50 @@ export default function LedgerPage() {
                     memberAvatar: member?.avatar,
                     statusLabel: STATUS_LABEL[entry.status],
                   };
-                  return <EntryRow key={entry.id} entry={row} />;
+                  const canReverseThis = canReverse && entry.status === 'POSTED';
+                  return (
+                    <EntryRow
+                      key={entry.id}
+                      entry={row}
+                      onClick={canReverseThis ? () => setReverseTarget(entry) : undefined}
+                    />
+                  );
                 })}
               </div>
             );
           })}
         </div>
       )}
+
+      <Dialog open={!!reverseTarget} onOpenChange={(open) => !open && setReverseTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reverse entry</DialogTitle>
+            <DialogDescription>
+              {reverseTarget?.title} — this books an opposite entry to cancel it out. The original is never edited.
+              A reason of at least 10 characters is required.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={reverseReason}
+            onChange={(e) => setReverseReason(e.target.value)}
+            placeholder="Why is this being reversed?"
+            rows={3}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReverseTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={reverseReason.trim().length < 10 || reverseMutation.isPending}
+              onClick={() => reverseTarget && reverseMutation.mutate({ id: reverseTarget.id, reason: reverseReason })}
+            >
+              {reverseMutation.isPending ? <ButtonLoader /> : 'Reverse'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

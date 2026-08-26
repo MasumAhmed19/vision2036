@@ -32,6 +32,8 @@ function AdminToolsContent() {
   const [year, setYear] = useState<number>(new Date().getFullYear());
   const [month, setMonth] = useState<string>(new Date().toISOString().slice(0, 7));
   const [userId, setUserId] = useState<string>('');
+  const [startMonth, setStartMonth] = useState<string>(new Date().toISOString().slice(0, 7));
+  const [endMonth, setEndMonth] = useState<string>(new Date().toISOString().slice(0, 7));
 
   const { data: syncFailures, isLoading: isSyncFailuresLoading, isError: isSyncFailuresError } = useQuery({
     queryKey: ['sync-failures'],
@@ -56,6 +58,8 @@ function AdminToolsContent() {
         year,
         month: scope === 'monthly' ? month : undefined,
         userId: scope === 'member' ? userId : undefined,
+        startMonth: scope === 'range' ? startMonth : undefined,
+        endMonth: scope === 'range' ? endMonth : undefined,
       };
 
       if (formatType === 'pdf') {
@@ -94,6 +98,7 @@ function AdminToolsContent() {
   const exportHint = useMemo(() => {
     if (scope === 'member') return 'Export a full member report with transfers, progress, and totals.';
     if (scope === 'monthly') return 'Export the selected month summary, all transactions, costs, and net balance.';
+    if (scope === 'range') return 'A simple statement for the chosen months: total deposits, total expenses, net balance, and each member\'s total — no transaction-level detail.';
     return 'Export the full year dump including members, summaries, transactions, and costs.';
   }, [scope]);
 
@@ -135,10 +140,24 @@ function AdminToolsContent() {
                 <SelectContent>
                   <SelectItem value="member">Member report</SelectItem>
                   <SelectItem value="monthly">Monthly report</SelectItem>
+                  <SelectItem value="range">Statement (month range)</SelectItem>
                   <SelectItem value="yearly">Full year dump</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+
+            {scope === 'range' ? (
+              <div className="grid grid-cols-2 gap-3 md:col-span-1">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">From</label>
+                  <Input type="month" value={startMonth} onChange={(event) => setStartMonth(event.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">To</label>
+                  <Input type="month" value={endMonth} onChange={(event) => setEndMonth(event.target.value)} />
+                </div>
+              </div>
+            ) : null}
 
             {scope === 'member' ? (
               <div className="space-y-2">
@@ -161,7 +180,7 @@ function AdminToolsContent() {
                 <label className="text-sm font-medium">Month</label>
                 <Input type="month" value={month} onChange={(event) => setMonth(event.target.value)} />
               </div>
-            ) : (
+            ) : scope === 'range' ? null : (
               <div className="space-y-2">
                 <label className="text-sm font-medium">Year</label>
                 <Select value={String(year)} onValueChange={(value) => setYear(Number(value))}>
@@ -181,11 +200,11 @@ function AdminToolsContent() {
           <p className="mt-4 rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">{exportHint}</p>
 
           <div className="mt-4 flex flex-wrap gap-3">
-            <Button onClick={() => exportMutation.mutate('pdf')} disabled={exportMutation.isPending || (scope === 'member' && !userId) || (scope === 'monthly' && !month)}>
+            <Button onClick={() => exportMutation.mutate('pdf')} disabled={exportMutation.isPending || (scope === 'member' && !userId) || (scope === 'monthly' && !month) || (scope === 'range' && (!startMonth || !endMonth || startMonth > endMonth))}>
               <FileText className="mr-2 h-4 w-4" />
               Export PDF
             </Button>
-            <Button variant="outline" onClick={() => exportMutation.mutate('excel')} disabled={exportMutation.isPending || (scope === 'member' && !userId) || (scope === 'monthly' && !month)}>
+            <Button variant="outline" onClick={() => exportMutation.mutate('excel')} disabled={exportMutation.isPending || (scope === 'member' && !userId) || (scope === 'monthly' && !month) || (scope === 'range' && (!startMonth || !endMonth || startMonth > endMonth))}>
               <FileSpreadsheet className="mr-2 h-4 w-4" />
               Export Excel
             </Button>

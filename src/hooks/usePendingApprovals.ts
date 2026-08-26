@@ -2,13 +2,14 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
-import { transfersService, entriesService } from '@/services';
+import { transfersService } from '@/services';
 
 /**
- * Combined "things that need a Co-Admin/Admin's attention" count — pending
- * payment verifications (the existing Transfer flow) plus pending ledger
- * entries (the new /api/entries approval workflow). Used for the Home tab's
- * badge in both nav shells.
+ * "Things that need a Co-Admin/Admin's attention" count — pending payment
+ * verifications (the Transfer flow). Ledger entries posted via /api/entries
+ * go straight to POSTED on a single action now (no two-person approval), so
+ * they never contribute to this count. Used for the Home tab's badge in
+ * both nav shells.
  */
 export function usePendingApprovalsCount() {
     const { user } = useAuth();
@@ -21,14 +22,7 @@ export function usePendingApprovalsCount() {
         refetchInterval: 60000,
     });
 
-    const entriesQuery = useQuery({
-        queryKey: ['entries', 'pending-count'],
-        queryFn: () => entriesService.getEntries('status=PENDING&limit=1'),
-        enabled: canApprove,
-        refetchInterval: 60000,
-    });
-
     if (!canApprove) return 0;
 
-    return (transfersQuery.data?.count || 0) + (entriesQuery.data?.meta.total || 0);
+    return transfersQuery.data?.count || 0;
 }

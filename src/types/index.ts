@@ -109,6 +109,7 @@ export interface GroupStatusMember {
   id: string;
   name: string;
   avatar: string | null;
+  headshot: string | null; // admin-curated photo for Home's Group/Top Contributors only
   status: 'paid' | 'pending' | 'unpaid';
   paid: number;
 }
@@ -118,10 +119,68 @@ export interface GroupStatus {
   members: GroupStatusMember[];
 }
 
+export interface TopContributor {
+  id: string;
+  name: string;
+  avatar: string | null;
+  headshot: string | null; // admin-curated photo for Home's Group/Top Contributors only
+  totalPaid: number; // whole Taka, all-time
+}
+
 export interface FundPosition {
   cash: number; // whole Taka
   investedAtCost: number;
   fundValue: number;
+}
+
+// Investment register (Phase 4)
+export type InvestmentKind = 'FDR' | 'DPS' | 'SHARE' | 'BOND' | 'PROPERTY' | 'BUSINESS' | 'OTHER';
+export type InvestmentStatus = 'PROPOSED' | 'ACTIVE' | 'MATURED' | 'EXITED' | 'WRITTEN_OFF';
+
+export interface Investment {
+  id: string;
+  name: string;
+  kind: InvestmentKind;
+  status: InvestmentStatus;
+  principal: number; // whole Taka — denormalized from posted INVESTMENT_OUT/PRINCIPAL_BACK entries
+  realisedReturn: number;
+  expectedRatePct?: number;
+  startDate?: string;
+  maturityDate?: string;
+  currentValue: number | null;
+  valuedAt?: string;
+  proposedBy: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Period close/reopen (Phase 4)
+export type PeriodStatus = 'OPEN' | 'CLOSED' | 'REOPENED';
+
+export interface PeriodSnapshot {
+  contributionsMonthly: number; // whole Taka
+  contributionsFlex: number;
+  interest: number;
+  investmentReturns: number;
+  bankCharges: number;
+  operationalCosts: number;
+  investedOut: number;
+  investmentPrincipalBack: number;
+  cash: number;
+  investedAtCost: number;
+  fundValue: number;
+  membersPaid: number;
+  membersPending: number;
+  membersUnpaid: number;
+}
+
+export interface PeriodDetail {
+  month: string;
+  status: PeriodStatus;
+  closedAt?: string;
+  reopenReason?: string | null;
+  snapshot: PeriodSnapshot;
 }
 
 // The public member directory (GET /api/members) — minimal, safe for every
@@ -417,18 +476,6 @@ export interface MemberDashboardData {
   }>;
 }
 
-// Statement types
-export interface Statement {
-  id: string;
-  month: number;
-  year: number;
-  fileUrl: string;
-  description: string | null;
-  uploadedBy: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
 // Policy types
 export interface Policy {
   id: string;
@@ -486,7 +533,7 @@ export interface SyncFailuresData {
   total: number;
 }
 
-export type ExportScope = 'member' | 'monthly' | 'yearly';
+export type ExportScope = 'member' | 'monthly' | 'yearly' | 'range';
 
 // Filter types
 export interface TransferFilters {

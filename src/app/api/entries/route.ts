@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import connectDB from '@/lib/mongoose';
 import LedgerEntry, { CREDIT_TYPES } from '@/models/LedgerEntry';
-import Policy from '@/models/Policy';
+import Investment from '@/models/Investment';
+import Period from '@/models/Period';
 import AuditLog from '@/models/AuditLog';
 import { withAuth } from '@/lib/with-auth';
 import { can, type Capability } from '@/lib/permissions';
@@ -24,6 +25,10 @@ const POSTABLE_TYPES = [
     'ADJUSTMENT',
 ] as const;
 
+// No two-person approval on any of these — every entry posts immediately on
+// a single action. INVESTMENT_OUT and INVESTMENT_PRINCIPAL_BACK are
+// admin-only (the largest, least-reversible movements the fund makes);
+// everything else is co_admin-or-admin.
 const TYPE_CAPABILITY: Record<(typeof POSTABLE_TYPES)[number], Capability> = {
     BANK_CHARGE: 'entry.post.expense',
     OPERATIONAL_COST: 'entry.post.expense',
@@ -31,11 +36,14 @@ const TYPE_CAPABILITY: Record<(typeof POSTABLE_TYPES)[number], Capability> = {
     ADJUSTMENT: 'entry.post.expense',
     INTEREST_BANK: 'entry.post.income',
     INVESTMENT_RETURN: 'entry.post.income',
-    INVESTMENT_PRINCIPAL_BACK: 'entry.post.income',
+    INVESTMENT_PRINCIPAL_BACK: 'entry.post.investment',
     INVESTMENT_OUT: 'entry.post.investment',
 };
 
-const DEFAULT_DUAL_APPROVAL_ABOVE_PAISA = toPaisa(1000); // Tk 1,000 — newDesign.md §19 Q3 recommendation, used until a Policy row is seeded
+// Investment movements must be tied to a specific Investment record so its
+// denormalized principal/realisedReturn can be kept in sync — done inline
+// below at posting time, since there's no separate approval step anymore.
+const INVESTMENT_LINKED_TYPES = ['INVESTMENT_OUT', 'INVESTMENT_RETURN', 'INVESTMENT_PRINCIPAL_BACK'] as const;
 
 const postEntrySchema = z
     .object({
@@ -48,6 +56,7 @@ const postEntrySchema = z
         channel: z.enum(['BANK', 'BKASH', 'NAGAD', 'ROCKET', 'CASH', 'INTERNAL', 'OTHER']).optional(),
         direction: z.enum(['CREDIT', 'DEBIT']).optional(), // required only for ADJUSTMENT
         memberId: z.string().optional(), // for WITHDRAWAL
+        investmentId: z.string().optional(), // required for INVESTMENT_OUT/RETURN/PRINCIPAL_BACK
         attachments: z
             .array(
                 z.object({
@@ -64,6 +73,13 @@ const postEntrySchema = z
                 code: z.ZodIssueCode.custom,
                 path: ['direction'],
                 message: 'direction (CREDIT or DEBIT) is required for an adjustment',
+            });
+        }
+        if ((INVESTMENT_LINKED_TYPES as readonly string[]).includes(data.type) && !data.investmentId) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ['investmentId'],
+                message: 'investmentId is required for this entry type',
             });
         }
     });
@@ -86,27 +102,35 @@ export const POST = withAuth({}, async ({ member, request }) => {
 
     await connectDB();
 
+    const periodStatus = await Period.getStatus(data.period);
+    if (periodStatus === 'CLOSED') {
+        return NextResponse.json(
+            { success: false, message: `${data.period} is closed — reopen it first to post new entries` },
+            { status: 400 }
+        );
+    }
+
+    if (data.investmentId && !(await Investment.exists({ _id: data.investmentId }))) {
+        return NextResponse.json({ success: false, message: 'Investment not found' }, { status: 404 });
+    }
+
     const direction = data.type === 'ADJUSTMENT'
         ? data.direction!
         : (CREDIT_TYPES as string[]).includes(data.type)
             ? 'CREDIT'
             : 'DEBIT';
 
-    const policy = await Policy.getCurrent();
-    const dualApprovalAbove = policy?.dualApprovalAbove ?? DEFAULT_DUAL_APPROVAL_ABOVE_PAISA;
     const amountPaisa = toPaisa(data.amount);
-
-    // Investment out is the largest movement the fund makes — always dual
-    // approval, any amount (newDesign.md §7.1), regardless of the general threshold.
-    const requiredApprovals = data.type === 'INVESTMENT_OUT' || amountPaisa >= dualApprovalAbove ? 2 : 1;
+    const now = new Date();
 
     const entry = await LedgerEntry.create({
         direction,
         type: data.type,
-        status: 'PENDING',
+        status: 'POSTED',
         amount: amountPaisa,
         currency: 'BDT',
         memberId: data.memberId,
+        investmentId: data.investmentId,
         period: data.period,
         valueDate: data.valueDate,
         title: data.title,
@@ -114,12 +138,38 @@ export const POST = withAuth({}, async ({ member, request }) => {
         channel: data.channel,
         attachments: (data.attachments || []).map((a) => ({
             ...a,
-            uploadedAt: new Date(),
+            uploadedAt: now,
             uploadedBy: member.id,
         })),
         createdBy: member.id,
-        requiredApprovals,
+        requiredApprovals: 0,
+        approvals: [{ by: member.id, at: now }],
+        postedAt: now,
     });
+
+    // Keep the linked Investment's denormalized totals in sync — the ledger
+    // stays the source of truth, this is just a fast-read cache (see
+    // src/models/Investment.ts). No separate approval step anymore, so this
+    // happens right here at posting time instead of in an approve route.
+    if (data.investmentId) {
+        const investment = await Investment.findById(data.investmentId);
+        if (investment) {
+            if (data.type === 'INVESTMENT_OUT') {
+                investment.principal += amountPaisa;
+                if (investment.status === 'PROPOSED') {
+                    investment.status = 'ACTIVE';
+                }
+            } else if (data.type === 'INVESTMENT_RETURN') {
+                investment.realisedReturn += amountPaisa;
+            } else if (data.type === 'INVESTMENT_PRINCIPAL_BACK') {
+                investment.principal = Math.max(investment.principal - amountPaisa, 0);
+                if (investment.principal === 0) {
+                    investment.status = 'EXITED';
+                }
+            }
+            await investment.save();
+        }
+    }
 
     await AuditLog.create({
         actorId: member.id,
@@ -127,11 +177,11 @@ export const POST = withAuth({}, async ({ member, request }) => {
         action: 'LEDGER_ENTRY_CREATED',
         targetCollection: 'LedgerEntry',
         targetId: String(entry._id),
-        newValue: { type: entry.type, amount: entry.amount, period: entry.period },
+        newValue: { type: entry.type, amount: entry.amount, period: entry.period, status: 'POSTED' },
     });
 
     return NextResponse.json(
-        { success: true, data: mapEntry(entry), message: `Submitted — needs ${requiredApprovals} approval${requiredApprovals > 1 ? 's' : ''}` },
+        { success: true, data: mapEntry(entry), message: 'Entry posted' },
         { status: 201 }
     );
 });

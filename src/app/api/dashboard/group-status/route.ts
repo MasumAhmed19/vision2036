@@ -32,7 +32,7 @@ export async function GET(request: Request) {
         const policy = getContributionPolicy(year);
 
         const [members, contributions] = await Promise.all([
-            User.find({ isActive: true }).select('_id name avatar').sort({ joinedAt: 1 }),
+            User.find({ isActive: true }).select('_id name avatar headshot').sort({ joinedAt: 1 }),
             getMemberContributionsInRange(period, period),
         ]);
 
@@ -46,6 +46,7 @@ export async function GET(request: Request) {
                 id: String(member._id),
                 name: member.name,
                 avatar: member.avatar || null,
+                headshot: member.headshot || null,
                 status,
                 paid,
             };

@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { z } from 'zod';
 import { auth } from '@/lib/auth';
 import connectDB from '@/lib/mongoose';
@@ -6,8 +6,19 @@ import Transfer, { classifyTransferPaymentType } from '@/models/Transfer';
 import User from '@/models/User';
 import BankAccount from '@/models/BankAccount';
 import { getClientIp } from '@/lib/request-ip';
+import { sendPaymentSubmittedEmail } from '@/lib/email';
+import { formatMonthLabel } from '@/lib/policies';
 
 const transferChannels = ['BANK_TRANSFER', 'BKASH', 'NAGAD', 'ROCKET', 'CASH', 'OTHER'] as const;
+
+const CHANNEL_LABELS: Record<string, string> = {
+    BANK_TRANSFER: 'Bank Transfer',
+    BKASH: 'bKash',
+    NAGAD: 'Nagad',
+    ROCKET: 'Rocket',
+    CASH: 'Cash',
+    OTHER: 'Other',
+};
 
 const createTransferSchema = z.object({
     bankAccountId: z.string().optional(),
@@ -335,6 +346,43 @@ export async function POST(request: Request) {
             targetId: newTransfer._id.toString(),
             ipAddress: getClientIp(request.headers),
         });
+
+        // Notify every admin/co_admin (except the submitter, if they happen
+        // to be one) that a payment is waiting on review. Fire-and-forget
+        // after the response is sent — a slow/failed email must never delay
+        // or break the actual submission.
+        const reviewers = await User.find({
+            role: { $in: ['admin', 'co_admin'] },
+            isActive: true,
+            _id: { $ne: session.user.id },
+        }).select('name email');
+
+        if (reviewers.length > 0) {
+            const submitterName = session.user.name || 'A member';
+            const periodLabel = formatMonthLabel(selectMonth);
+            const channelLabel = CHANNEL_LABELS[transferChannel] || transferChannel;
+            const appUrl = process.env.NEXTAUTH_URL
+                || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
+            const reviewLink = `${appUrl}/admin/payments/pending`;
+
+            after(async () => {
+                await Promise.all(
+                    reviewers.map((reviewer) =>
+                        sendPaymentSubmittedEmail(
+                            reviewer.email,
+                            reviewer.name,
+                            submitterName,
+                            totalAmount,
+                            periodLabel,
+                            channelLabel,
+                            reviewLink
+                        ).catch((error) => {
+                            console.error(`Failed to send payment-submitted email to ${reviewer.email}:`, error);
+                        })
+                    )
+                );
+            });
+        }
 
         return NextResponse.json({
             success: true,

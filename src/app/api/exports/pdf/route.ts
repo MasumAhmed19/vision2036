@@ -1,12 +1,14 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { auth } from '@/lib/auth';
-import { buildExportFileName, createPdfBuffer, getMemberExportData, getMonthlyExportData, getYearlyExportData } from '@/lib/export-utils';
+import { buildExportFileName, createPdfBuffer, getMemberExportData, getMonthlyExportData, getRangeExportData, getYearlyExportData } from '@/lib/export-utils';
 
 const querySchema = z.object({
-  scope: z.enum(['member', 'monthly', 'yearly']),
+  scope: z.enum(['member', 'monthly', 'yearly', 'range']),
   year: z.coerce.number().int().min(2024).max(2100).optional(),
   month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+  startMonth: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+  endMonth: z.string().regex(/^\d{4}-\d{2}$/).optional(),
   userId: z.string().trim().optional(),
 });
 
@@ -22,6 +24,8 @@ export async function GET(request: Request) {
       scope: url.searchParams.get('scope'),
       year: url.searchParams.get('year') || undefined,
       month: url.searchParams.get('month') || undefined,
+      startMonth: url.searchParams.get('startMonth') || undefined,
+      endMonth: url.searchParams.get('endMonth') || undefined,
       userId: url.searchParams.get('userId') || undefined,
     });
 
@@ -29,7 +33,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: false, message: 'Invalid export parameters' }, { status: 400 });
     }
 
-    const { scope, year, month, userId } = parsed.data;
+    const { scope, year, month, startMonth, endMonth, userId } = parsed.data;
     const isAdmin = ['admin', 'moderator', 'co_admin'].includes(session.user.role);
 
     let fileName = 'report.pdf';
@@ -55,12 +59,24 @@ export async function GET(request: Request) {
       }
       data = await getMonthlyExportData(month);
       fileName = buildExportFileName('monthly', 'pdf', { month });
-    } else {
+    } else if (scope === 'yearly') {
       if (!isAdmin) {
         return NextResponse.json({ success: false, message: 'Forbidden' }, { status: 403 });
       }
       data = await getYearlyExportData(year || new Date().getFullYear());
       fileName = buildExportFileName('yearly', 'pdf', { year: data.year });
+    } else {
+      if (!isAdmin) {
+        return NextResponse.json({ success: false, message: 'Forbidden' }, { status: 403 });
+      }
+      if (!startMonth || !endMonth) {
+        return NextResponse.json({ success: false, message: 'Start and end month are required for a range statement' }, { status: 400 });
+      }
+      if (startMonth > endMonth) {
+        return NextResponse.json({ success: false, message: 'Start month must be before end month' }, { status: 400 });
+      }
+      data = await getRangeExportData(startMonth, endMonth);
+      fileName = buildExportFileName('range', 'pdf', { startPeriod: startMonth, endPeriod: endMonth });
     }
 
     const buffer = await createPdfBuffer(data);

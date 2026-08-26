@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import connectDB from '@/lib/mongoose';
 import LedgerEntry from '@/models/LedgerEntry';
+import Investment from '@/models/Investment';
+import Period from '@/models/Period';
 import AuditLog from '@/models/AuditLog';
 import { withAuth } from '@/lib/with-auth';
 import { mapEntry } from '@/lib/entry-mapper';
@@ -48,6 +50,14 @@ export const POST = withAuth<{ params: Promise<{ id: string }> }>(
             return NextResponse.json({ success: false, message: 'Entry has already been reversed' }, { status: 400 });
         }
 
+        const periodStatus = await Period.getStatus(original.period);
+        if (periodStatus === 'CLOSED') {
+            return NextResponse.json(
+                { success: false, message: `${original.period} is closed — reopen it first to reverse entries in it` },
+                { status: 400 }
+            );
+        }
+
         const reversal = await LedgerEntry.create({
             direction: original.direction === 'CREDIT' ? 'DEBIT' : 'CREDIT',
             type: original.type,
@@ -55,6 +65,7 @@ export const POST = withAuth<{ params: Promise<{ id: string }> }>(
             amount: original.amount,
             currency: original.currency,
             memberId: original.memberId,
+            investmentId: original.investmentId,
             period: original.period,
             valueDate: new Date(),
             title: `Reversal: ${original.title}`,
@@ -70,6 +81,26 @@ export const POST = withAuth<{ params: Promise<{ id: string }> }>(
         original.status = 'REVERSED';
         original.reversedBy = reversal._id;
         await original.save();
+
+        // Undo the same denormalized-total effect the original posting had
+        // (see entries/[id]/approve/route.ts, the only other place that
+        // touches these totals).
+        if (original.investmentId) {
+            const investment = await Investment.findById(original.investmentId);
+            if (investment) {
+                if (original.type === 'INVESTMENT_OUT') {
+                    investment.principal = Math.max(investment.principal - original.amount, 0);
+                } else if (original.type === 'INVESTMENT_RETURN') {
+                    investment.realisedReturn = Math.max(investment.realisedReturn - original.amount, 0);
+                } else if (original.type === 'INVESTMENT_PRINCIPAL_BACK') {
+                    investment.principal += original.amount;
+                    if (investment.status === 'EXITED') {
+                        investment.status = 'ACTIVE';
+                    }
+                }
+                await investment.save();
+            }
+        }
 
         await AuditLog.create({
             actorId: member.id,

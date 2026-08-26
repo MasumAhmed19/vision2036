@@ -67,15 +67,27 @@ export interface ILedgerEntry {
 
     attachments: ILedgerAttachment[];
 
+    // Set for INVESTMENT_OUT/INVESTMENT_RETURN/INVESTMENT_PRINCIPAL_BACK
+    // entries linked to a specific Investment (Phase 4) — optional so
+    // existing/backfilled entries and non-investment types are unaffected.
+    investmentId?: mongoose.Types.ObjectId | string;
+
     reversalOf?: mongoose.Types.ObjectId | string;
     reversedBy?: mongoose.Types.ObjectId | string;
 
     createdBy: mongoose.Types.ObjectId | string;
-    // Computed once at creation (from Policy at that time) so a later policy
-    // change never retroactively changes what an in-flight entry needs.
+    // No two-person approval anymore (see /api/entries POST) — every entry
+    // created going forward is `requiredApprovals: 0` with a single
+    // self-recorded approval, and posts as POSTED immediately. These fields
+    // are kept (not removed) because older entries — backfilled ones, and
+    // ones created back when this route did have a PENDING+approve
+    // workflow — carry real historical requiredApprovals/approvals data.
     requiredApprovals: number;
     approvals: ILedgerApproval[];
     postedAt?: Date;
+    // rejectedBy/At/Reason are likewise historical-only now — nothing
+    // created going forward ever reaches REJECTED, since there's no
+    // approval step left to reject at.
     rejectedBy?: mongoose.Types.ObjectId | string;
     rejectedAt?: Date;
     rejectionReason?: string;
@@ -149,6 +161,8 @@ const LedgerEntrySchema = new Schema<ILedgerEntryDocument>(
 
         attachments: { type: [LedgerAttachmentSchema], default: [] },
 
+        investmentId: { type: Schema.Types.ObjectId, ref: 'Investment' },
+
         reversalOf: { type: Schema.Types.ObjectId, ref: 'LedgerEntry' },
         reversedBy: { type: Schema.Types.ObjectId, ref: 'LedgerEntry' },
 
@@ -180,14 +194,23 @@ LedgerEntrySchema.index({ period: 1, status: 1 });
 LedgerEntrySchema.index({ memberId: 1, period: 1 });
 LedgerEntrySchema.index({ status: 1, createdAt: -1 }); // the approvals queue
 LedgerEntrySchema.index({ type: 1, valueDate: -1 });
+LedgerEntrySchema.index({ investmentId: 1 }, { sparse: true });
 // Backfill idempotency: at most one ledger entry per (source document, type)
 // — a single Transfer can produce both a CONTRIBUTION_MONTHLY and a
 // CONTRIBUTION_FLEX entry (the "pay both together" case), so `type` has to
-// be part of the key, not just the source id. Sparse because entries
-// created going forward (via /api/entries) have no `source` at all.
+// be part of the key, not just the source id.
+//
+// MUST be a partial index keyed on `source.id` existence, not `sparse: true`
+// — `type` is always present, and MongoDB's compound-sparse rule only skips
+// a document when EVERY indexed field is missing. With `sparse: true` here,
+// every non-backfill entry (no `source` at all) still gets an index entry
+// keyed on (undefined, undefined, type), so a second ordinary entry of the
+// same type — e.g. a second month's BANK_CHARGE — would collide on a
+// completely unrelated document. A partial index scoped to `source.id`
+// existing correctly excludes all non-backfill entries instead.
 LedgerEntrySchema.index(
     { 'source.sourceType': 1, 'source.id': 1, type: 1 },
-    { unique: true, sparse: true }
+    { unique: true, partialFilterExpression: { 'source.id': { $exists: true } } }
 );
 
 const LedgerEntry: ILedgerEntryModel =

@@ -1,5 +1,10 @@
+import mongoose from 'mongoose';
 import connectDB from '@/lib/mongoose';
 import LedgerEntry, { CREDIT_TYPES } from '@/models/LedgerEntry';
+import User from '@/models/User';
+import { getContributionPolicy } from '@/lib/policies';
+import { toPaisa } from '@/lib/money';
+import type { IPeriodSnapshot } from '@/models/Period';
 
 export interface FundPosition {
     cash: number; // paisa
@@ -24,7 +29,11 @@ export interface FundPosition {
 export async function getFundPosition(options: { throughPeriod?: string } = {}): Promise<FundPosition> {
     await connectDB();
 
-    const match: Record<string, unknown> = { status: 'POSTED' };
+    // A REVERSED entry's original movement genuinely happened (real money
+    // moved) and is only offset by a separate reversal entry, not erased —
+    // both must be included here or the pair fails to net to zero (see the
+    // REVERSED_STATUS_NOTE below).
+    const match: Record<string, unknown> = { status: { $in: ['POSTED', 'REVERSED'] } };
     if (options.throughPeriod) {
         match.period = { $lte: options.throughPeriod };
     }
@@ -36,15 +45,46 @@ export async function getFundPosition(options: { throughPeriod?: string } = {}):
                 _id: null,
                 creditTotal: { $sum: { $cond: [{ $eq: ['$direction', 'CREDIT'] }, '$amount', 0] } },
                 debitTotal: { $sum: { $cond: [{ $eq: ['$direction', 'DEBIT'] }, '$amount', 0] } },
-                investedOut: { $sum: { $cond: [{ $eq: ['$type', 'INVESTMENT_OUT'] }, '$amount', 0] } },
-                investedBack: { $sum: { $cond: [{ $eq: ['$type', 'INVESTMENT_PRINCIPAL_BACK'] }, '$amount', 0] } },
+                investedOutDebit: {
+                    $sum: {
+                        $cond: [{ $and: [{ $eq: ['$type', 'INVESTMENT_OUT'] }, { $eq: ['$direction', 'DEBIT'] }] }, '$amount', 0],
+                    },
+                },
+                investedOutCredit: {
+                    $sum: {
+                        $cond: [{ $and: [{ $eq: ['$type', 'INVESTMENT_OUT'] }, { $eq: ['$direction', 'CREDIT'] }] }, '$amount', 0],
+                    },
+                },
+                investedBackCredit: {
+                    $sum: {
+                        $cond: [
+                            { $and: [{ $eq: ['$type', 'INVESTMENT_PRINCIPAL_BACK'] }, { $eq: ['$direction', 'CREDIT'] }] },
+                            '$amount',
+                            0,
+                        ],
+                    },
+                },
+                investedBackDebit: {
+                    $sum: {
+                        $cond: [
+                            { $and: [{ $eq: ['$type', 'INVESTMENT_PRINCIPAL_BACK'] }, { $eq: ['$direction', 'DEBIT'] }] },
+                            '$amount',
+                            0,
+                        ],
+                    },
+                },
             },
         },
     ]);
 
     const creditTotal = row?.creditTotal ?? 0;
     const debitTotal = row?.debitTotal ?? 0;
-    const investedAtCost = (row?.investedOut ?? 0) - (row?.investedBack ?? 0);
+    // Net of direction, not a raw sum-by-type — a reversed INVESTMENT_OUT is
+    // booked as a CREDIT of the same type (see entries/[id]/reverse/route.ts),
+    // so summing by type alone would double it instead of cancelling it out.
+    const investedOut = (row?.investedOutDebit ?? 0) - (row?.investedOutCredit ?? 0);
+    const investedBack = (row?.investedBackCredit ?? 0) - (row?.investedBackDebit ?? 0);
+    const investedAtCost = investedOut - investedBack;
     const cash = creditTotal - debitTotal;
 
     return {
@@ -80,19 +120,39 @@ const TYPE_TO_AGGREGATE_KEY: Record<string, keyof PeriodAggregate> = {
     INVESTMENT_PRINCIPAL_BACK: 'investmentPrincipalBack',
 };
 
-/**
- * Sums for entries whose `period` is exactly this one 'YYYY-MM' month (not
- * cumulative). Groups by (type, direction), not type alone — a reversal is
- * the opposite direction of the same type (see the entries/[id]/reverse
- * route), and this nets it out rather than double-counting it. This is
- * exactly what getFundPosition already does for the overall cash figure;
- * this just applies the same rule per category.
- */
+/** Sums for entries whose `period` is exactly this one 'YYYY-MM' month (not cumulative). */
 export async function getPeriodAggregate(period: string): Promise<PeriodAggregate> {
     await connectDB();
+    return aggregateByType({ status: { $in: ['POSTED', 'REVERSED'] }, period });
+}
 
+/**
+ * Same as getPeriodAggregate, but summed over an inclusive 'YYYY-MM' range
+ * instead of a single month — e.g. for a "January–June 2026" statement.
+ */
+export async function getRangeAggregate(startPeriod: string, endPeriod: string): Promise<PeriodAggregate> {
+    await connectDB();
+    return aggregateByType({
+        status: { $in: ['POSTED', 'REVERSED'] },
+        period: { $gte: startPeriod, $lte: endPeriod },
+    });
+}
+
+/**
+ * Groups by (type, direction), not type alone — a reversal is the opposite
+ * direction of the same type (see the entries/[id]/reverse route), and this
+ * nets it out rather than double-counting it. This is exactly what
+ * getFundPosition already does for the overall cash figure; this just
+ * applies the same rule per category.
+ *
+ * `match` must constrain status to POSTED and REVERSED — a reversed entry's
+ * status changes to REVERSED (not POSTED), so excluding it would mean only
+ * the reversal's opposite-direction amount gets counted, inverting the net
+ * instead of cancelling it to zero.
+ */
+async function aggregateByType(match: Record<string, unknown>): Promise<PeriodAggregate> {
     const rows = await LedgerEntry.aggregate([
-        { $match: { status: 'POSTED', period } },
+        { $match: match },
         {
             $group: {
                 _id: '$type',
@@ -156,12 +216,20 @@ export async function getMemberContributionsInRange(
     await connectDB();
 
     const match: Record<string, unknown> = {
-        status: 'POSTED',
+        // See getPeriodAggregate above — REVERSED must stay included so a
+        // reversed contribution and its reversal net to zero rather than
+        // inverting.
+        status: { $in: ['POSTED', 'REVERSED'] },
         period: { $gte: startPeriod, $lte: endPeriod },
         type: { $in: ['CONTRIBUTION_MONTHLY', 'CONTRIBUTION_FLEX'] },
         memberId: { $ne: null },
     };
-    if (memberId) match.memberId = memberId;
+    // Model.aggregate() bypasses Mongoose's schema-based query casting (unlike
+    // .find()), so a raw string here would never match the ObjectId values
+    // actually stored on memberId — every per-member call (e.g. "My Summary")
+    // would silently return zero rows while the all-members call keeps working,
+    // since that one never filters by memberId at all.
+    if (memberId) match.memberId = new mongoose.Types.ObjectId(memberId);
 
     // Net credit-minus-debit per (member, type) — a reversal of a
     // contribution is booked as a DEBIT of the same type (see the
@@ -191,11 +259,59 @@ export async function getMemberContributionsInRange(
     return Array.from(byMember.values());
 }
 
-/** Distinct 'YYYY-MM' periods with at least one POSTED entry in range — replaces the old transferDate/selectMonth-mixing month enumeration. */
+/**
+ * Everything a Period.snapshot freezes at close time, in paisa — the one
+ * function allowed to compute it, called both by the close route (which
+ * saves the result) and the period GET route (which uses it for a live
+ * preview of an OPEN month without saving anything).
+ */
+export async function computePeriodSnapshot(month: string): Promise<IPeriodSnapshot> {
+    await connectDB();
+
+    const [aggregate, position, members, contributions] = await Promise.all([
+        getPeriodAggregate(month),
+        getFundPosition({ throughPeriod: month }),
+        User.find({ isActive: true }).select('_id'),
+        getMemberContributionsInRange(month, month),
+    ]);
+
+    const policy = getContributionPolicy(Number(month.split('-')[0]));
+    const monthlyAmountPaisa = toPaisa(policy.monthlyAmount);
+    const paidByMember = new Map(contributions.map((c) => [c.memberId, c.monthlyPaid]));
+
+    let membersPaid = 0;
+    let membersPending = 0;
+    let membersUnpaid = 0;
+    for (const member of members) {
+        const paid = paidByMember.get(String(member._id)) || 0;
+        if (paid >= monthlyAmountPaisa) membersPaid += 1;
+        else if (paid > 0) membersPending += 1;
+        else membersUnpaid += 1;
+    }
+
+    return {
+        contributionsMonthly: aggregate.contributionsMonthly,
+        contributionsFlex: aggregate.contributionsFlex,
+        interest: aggregate.interest,
+        investmentReturns: aggregate.investmentReturns,
+        bankCharges: aggregate.bankCharges,
+        operationalCosts: aggregate.operationalCosts,
+        investedOut: aggregate.investedOut,
+        investmentPrincipalBack: aggregate.investmentPrincipalBack,
+        cash: position.cash,
+        investedAtCost: position.investedAtCost,
+        fundValue: position.fundValue,
+        membersPaid,
+        membersPending,
+        membersUnpaid,
+    };
+}
+
+/** Distinct 'YYYY-MM' periods with at least one POSTED/REVERSED entry in range — replaces the old transferDate/selectMonth-mixing month enumeration. */
 export async function listPeriodsWithActivity(startPeriod: string, endPeriod: string): Promise<string[]> {
     await connectDB();
     const periods = await LedgerEntry.distinct('period', {
-        status: 'POSTED',
+        status: { $in: ['POSTED', 'REVERSED'] },
         period: { $gte: startPeriod, $lte: endPeriod },
     });
     return (periods as string[]).sort();

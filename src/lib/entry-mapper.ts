@@ -9,6 +9,7 @@ export function mapEntry(entry: ILedgerEntryDocument) {
         status: entry.status,
         amount: fromPaisa(entry.amount),
         memberId: entry.memberId ? String(entry.memberId) : null,
+        investmentId: entry.investmentId ? String(entry.investmentId) : null,
         period: entry.period,
         valueDate: entry.valueDate,
         title: entry.title,

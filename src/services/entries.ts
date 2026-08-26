@@ -11,6 +11,7 @@ export interface CreateEntryPayload {
   channel?: string;
   direction?: 'CREDIT' | 'DEBIT'; // required only for ADJUSTMENT
   memberId?: string;
+  investmentId?: string; // required for INVESTMENT_OUT/RETURN/PRINCIPAL_BACK
   attachments?: Array<{ url: string; publicId?: string; kind: 'SCREENSHOT' | 'RECEIPT' | 'STATEMENT' }>;
 }
 
@@ -31,13 +32,10 @@ export const entriesService = {
     return response.data.data;
   },
 
-  approveEntry: async (id: string): Promise<LedgerEntry> => {
-    const response = await api.post<ApiResponse<LedgerEntry>>(`/entries/${id}/approve`);
-    return response.data.data;
-  },
-
-  rejectEntry: async (id: string, reason: string): Promise<LedgerEntry> => {
-    const response = await api.post<ApiResponse<LedgerEntry>>(`/entries/${id}/reject`, { reason });
+  uploadProof: async (formData: FormData): Promise<{ url: string; publicId: string }> => {
+    const response = await api.post<ApiResponse<{ url: string; publicId: string }>>('/entries/upload-proof', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
     return response.data.data;
   },
 

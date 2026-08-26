@@ -13,7 +13,12 @@ export interface IUser {
     password: string;
     role: UserRole;
     phoneNumber?: string;
-    avatar?: string; // Cloudinary URL
+    avatar?: string; // Cloudinary URL — the member's own profile picture, shown everywhere
+    // A separate, admin-curated photo used only on Home's "The Group" and
+    // "Top Contributors" sections — deliberately distinct from `avatar` so
+    // updating one never touches the other. Falls back to `avatar` wherever
+    // it's used if unset.
+    headshot?: string; // Cloudinary URL
     isActive: boolean;
     joinedAt: Date;
     createdAt: Date;
@@ -66,6 +71,9 @@ const UserSchema = new Schema<IUserDocument>(
         },
         avatar: {
             type: String, // Cloudinary URL
+        },
+        headshot: {
+            type: String, // Cloudinary URL — see IUser.headshot above
         },
         isActive: {
             type: Boolean,

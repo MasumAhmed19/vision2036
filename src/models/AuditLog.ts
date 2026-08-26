@@ -25,7 +25,12 @@ export type AuditAction =
     | 'LEDGER_ENTRY_CREATED'
     | 'LEDGER_ENTRY_APPROVED'
     | 'LEDGER_ENTRY_REJECTED'
-    | 'LEDGER_ENTRY_REVERSED';
+    | 'LEDGER_ENTRY_REVERSED'
+    | 'INVESTMENT_PROPOSED'
+    | 'INVESTMENT_VALUED'
+    | 'PERIOD_CLOSED'
+    | 'PERIOD_REOPENED'
+    | 'NOTIFICATION_SENT';
 
 export interface IAuditLog {
     actorId: mongoose.Types.ObjectId | string;
@@ -82,6 +87,11 @@ const AuditLogSchema = new Schema<IAuditLogDocument>(
                 'LEDGER_ENTRY_APPROVED',
                 'LEDGER_ENTRY_REJECTED',
                 'LEDGER_ENTRY_REVERSED',
+                'INVESTMENT_PROPOSED',
+                'INVESTMENT_VALUED',
+                'PERIOD_CLOSED',
+                'PERIOD_REOPENED',
+                'NOTIFICATION_SENT',
             ],
             required: true,
         },

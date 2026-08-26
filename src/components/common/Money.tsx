@@ -45,7 +45,16 @@ export function Money({ value, direction, kind = 'default', reversed, showSign, 
                             ? 'text-debit'
                             : 'text-foreground';
 
-    const prefix = reversed ? '' : kind === 'invest' ? '→ ' : shouldShowSign ? (direction === 'DEBIT' ? '− ' : '+ ') : '';
+    // Even with no direction/kind set (e.g. a signed FundPosition total, not a
+    // ledger entry), a negative value must still show its sign — otherwise a
+    // negative cash position renders identically to a positive one.
+    const prefix = reversed
+        ? ''
+        : kind === 'invest'
+            ? '→ '
+            : shouldShowSign
+                ? direction === 'DEBIT' ? '− ' : '+ '
+                : value < 0 ? '− ' : '';
 
     return (
         <span className={cn('money whitespace-nowrap', colorClass, className)}>

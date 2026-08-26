@@ -1,14 +1,15 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
-import { format } from 'date-fns';
-import { ClipboardCheck, Plus } from 'lucide-react';
+import { format, addMonths } from 'date-fns';
+import { ClipboardCheck, Plus, Trophy } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePendingApprovalsCount } from '@/hooks/usePendingApprovals';
 import { Money } from '@/components/common/Money';
 import { GroupBoard } from '@/components/common/GroupBoard';
+import { UserAvatar } from '@/components/common/UserAvatar';
 import { EntryRow, type EntryRowData } from '@/components/common/EntryRow';
 import { Button } from '@/components/ui/button';
 import { CardSkeleton } from '@/components/common/LoadingStates';
@@ -18,6 +19,7 @@ import type { LedgerEntry, LedgerEntryType } from '@/types';
 const TARGET_YEAR = 2036;
 const START_YEAR = 2026; // the fund's first year, per newDesign.md's own worked example
 const INVEST_TYPES: LedgerEntryType[] = ['INVESTMENT_OUT', 'INVESTMENT_RETURN', 'INVESTMENT_PRINCIPAL_BACK'];
+const RANK_MEDAL = ['🥇', '🥈', '🥉'];
 
 function entryKind(entry: LedgerEntry): EntryRowData['kind'] {
   if (INVEST_TYPES.includes(entry.type)) return 'invest';
@@ -29,7 +31,13 @@ export default function HomePage() {
   const { user, isLoading } = useAuth();
   const pendingCount = usePendingApprovalsCount();
   const canApprove = !!user && ['admin', 'moderator', 'co_admin'].includes(user.role);
-  const currentPeriod = new Date().toISOString().slice(0, 7);
+
+  // "The Group" month being viewed — separate from the current-month "you
+  // haven't paid" widget above, which always looks at the real current month.
+  const [groupMonthOffset, setGroupMonthOffset] = useState(0);
+  const groupMonthDate = addMonths(new Date(), groupMonthOffset);
+  const groupPeriod = format(groupMonthDate, 'yyyy-MM');
+  const groupPeriodLabel = format(groupMonthDate, 'MMMM yyyy');
 
   const { data: fundPosition, isLoading: fundLoading } = useQuery({
     queryKey: ['fund', 'position'],
@@ -43,13 +51,19 @@ export default function HomePage() {
   });
 
   const { data: groupStatus, isLoading: groupLoading } = useQuery({
-    queryKey: ['dashboard', 'group-status', currentPeriod],
-    queryFn: () => entriesService.getGroupStatus(currentPeriod),
+    queryKey: ['dashboard', 'group-status', groupPeriod],
+    queryFn: () => entriesService.getGroupStatus(groupPeriod),
   });
 
   const { data: recentEntries } = useQuery({
     queryKey: ['entries', 'recent'],
     queryFn: () => entriesService.getEntries('limit=6'),
+  });
+
+  const { data: topContributors, isLoading: topContributorsLoading } = useQuery({
+    queryKey: ['dashboard', 'top-contributors'],
+    queryFn: () => dashboardService.getTopContributors(3),
+    staleTime: 5 * 60 * 1000,
   });
 
   const { data: members } = useQuery({
@@ -108,28 +122,69 @@ export default function HomePage() {
         </Link>
       )}
 
-      {/* This month */}
-      {memberDashboard && memberDashboard.monthlyStatus.status !== 'paid' && (
-        <div className="rounded-xl border bg-card p-4">
-          <p className="text-sm font-semibold">You haven&apos;t paid this month</p>
-          <p className="text-sm text-muted-foreground">
-            <Money value={memberDashboard.monthlyStatus.remainingAmount} direction="DEBIT" showSign={false} /> due by
-            day {memberDashboard.monthlyStatus.deadlineDay}
-          </p>
-          <Button asChild className="mt-3 w-full sm:w-auto">
-            <Link href="/payments/submit">
-              <Plus className="mr-1 h-4 w-4" /> Pay now
-            </Link>
-          </Button>
-        </div>
-      )}
+      {/* This month / Pay now — always visible so a past- or future-month
+          payment is easy to find regardless of this month's status. */}
+      <div className="rounded-xl border bg-card p-4">
+        {memberDashboard && memberDashboard.monthlyStatus.status !== 'paid' ? (
+          <>
+            <p className="text-sm font-semibold">You haven&apos;t paid this month</p>
+            <p className="text-sm text-muted-foreground">
+              <Money value={memberDashboard.monthlyStatus.remainingAmount} direction="DEBIT" showSign={false} /> due by
+              day {memberDashboard.monthlyStatus.deadlineDay}
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="text-sm font-semibold">You&apos;re paid up for this month</p>
+            <p className="text-sm text-muted-foreground">Catching up on a past month, or paying ahead? You can submit that here too.</p>
+          </>
+        )}
+        <Button asChild className="mt-3 w-full sm:w-auto">
+          <Link href="/payments/submit">
+            <Plus className="mr-1 h-4 w-4" /> Pay now
+          </Link>
+        </Button>
+      </div>
 
       {/* The Group */}
       <div className="rounded-xl border bg-card p-4">
         {groupLoading ? (
           <div className="h-20 animate-pulse rounded bg-muted" />
         ) : (
-          <GroupBoard members={groupStatus?.members || []} />
+          <GroupBoard
+            members={(groupStatus?.members || []).map((m) => ({ ...m, avatar: m.headshot || m.avatar }))}
+            periodLabel={groupPeriodLabel}
+            onPrevMonth={() => setGroupMonthOffset((o) => o - 1)}
+            onNextMonth={() => setGroupMonthOffset((o) => o + 1)}
+          />
+        )}
+      </div>
+
+      {/* Top Contributors */}
+      <div className="rounded-xl border bg-card p-4">
+        <div className="mb-3 flex items-center gap-2">
+          <Trophy className="h-4 w-4 text-pending" />
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Top Contributors</h3>
+          <span className="text-xs text-muted-foreground">· all-time</span>
+        </div>
+
+        {topContributorsLoading ? (
+          <div className="h-20 animate-pulse rounded bg-muted" />
+        ) : !topContributors || topContributors.length === 0 ? (
+          <p className="py-4 text-center text-sm text-muted-foreground">No contributions yet.</p>
+        ) : (
+          <div className="space-y-1">
+            {topContributors.map((contributor, index) => (
+              <div key={contributor.id} className="flex items-center gap-3 rounded-lg px-2 py-2">
+                <span className="w-5 shrink-0 text-center text-sm">
+                  {RANK_MEDAL[index] ?? `#${index + 1}`}
+                </span>
+                <UserAvatar name={contributor.name} avatar={contributor.headshot || contributor.avatar} className="h-9 w-9 shrink-0" />
+                <p className="min-w-0 flex-1 truncate text-sm font-medium">{contributor.name}</p>
+                <Money value={contributor.totalPaid} className="shrink-0 text-sm font-semibold" />
+              </div>
+            ))}
+          </div>
         )}
       </div>
 

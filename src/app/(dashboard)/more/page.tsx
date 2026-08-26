@@ -6,7 +6,6 @@ import {
   Building2,
   BarChart3,
   Globe,
-  FileText,
   ClipboardCheck,
   PlusCircle,
   LayoutDashboard,
@@ -16,6 +15,8 @@ import {
   ShieldCheck,
   ChevronRight,
   LogOut,
+  Lock,
+  Mail,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePendingApprovalsCount } from '@/hooks/usePendingApprovals';
@@ -79,12 +80,13 @@ export default function MorePage() {
     { href: '/bank-accounts', label: 'Bank Accounts', icon: Building2 },
     { href: '/summaries', label: 'My Summary', icon: BarChart3 },
     { href: '/global-summary', label: 'Global Summary', icon: Globe },
-    { href: '/statements', label: 'Statements', icon: FileText },
   ];
 
   const approvalLinks: MoreLink[] = [
     { href: '/approvals', label: 'Needs Review', icon: ClipboardCheck, badge: pendingCount },
     { href: '/approvals/post', label: 'Post an Entry', icon: PlusCircle },
+    { href: '/periods', label: 'Close the Month', icon: Lock },
+    { href: '/notify', label: 'Send Notification', icon: Mail },
   ];
 
   const adminLinks: MoreLink[] = [

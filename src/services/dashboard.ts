@@ -1,5 +1,5 @@
 import api from '@/lib/api';
-import type { ApiResponse, AdminDashboardData, MemberDashboardData } from '@/types';
+import type { ApiResponse, AdminDashboardData, MemberDashboardData, TopContributor } from '@/types';
 
 export const dashboardService = {
   getAdminDashboard: async (): Promise<AdminDashboardData> => {
@@ -9,6 +9,11 @@ export const dashboardService = {
 
   getMemberDashboard: async (): Promise<MemberDashboardData> => {
     const response = await api.get<ApiResponse<MemberDashboardData>>('/dashboard/member');
+    return response.data.data;
+  },
+
+  getTopContributors: async (limit = 3): Promise<TopContributor[]> => {
+    const response = await api.get<ApiResponse<TopContributor[]>>(`/dashboard/top-contributors?limit=${limit}`);
     return response.data.data;
   },
 };

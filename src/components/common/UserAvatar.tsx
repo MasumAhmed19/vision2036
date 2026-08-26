@@ -30,7 +30,7 @@ export function getInitials(name?: string | null) {
 export function UserAvatar({ name, avatar, className, fallbackClassName }: UserAvatarProps) {
   return (
     <Avatar className={cn('h-10 w-10', className)}>
-      <AvatarImage src={avatar || undefined} alt={name || 'Member'} className="object-cover" />
+      <AvatarImage src={avatar || undefined} alt={name || 'Member'} className="object-cover -scale-z-110 bg-[#e6f2ee]"  />
       <AvatarFallback className={cn('font-semibold', fallbackClassName)}>
         {getInitials(name)}
       </AvatarFallback>

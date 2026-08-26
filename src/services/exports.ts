@@ -5,6 +5,8 @@ export interface ExportParams {
   scope: ExportScope;
   year?: number;
   month?: string;
+  startMonth?: string;
+  endMonth?: string;
   userId?: string;
 }
 
@@ -13,6 +15,8 @@ function buildQuery(params: ExportParams) {
   query.set('scope', params.scope);
   if (params.year) query.set('year', String(params.year));
   if (params.month) query.set('month', params.month);
+  if (params.startMonth) query.set('startMonth', params.startMonth);
+  if (params.endMonth) query.set('endMonth', params.endMonth);
   if (params.userId) query.set('userId', params.userId);
   return query.toString();
 }

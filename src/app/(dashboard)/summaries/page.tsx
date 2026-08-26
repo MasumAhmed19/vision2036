@@ -11,9 +11,11 @@ import {
   AlertCircle,
   FileSpreadsheet,
   FileText,
+  Check,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -234,28 +236,36 @@ export default function SummariesPage() {
           <div className="grid grid-cols-4 gap-2">
             {MONTHS.map((month, i) => {
               const isPaid = i + 1 <= (summary.monthly?.monthsPaid || 0);
+              const isCurrentMonth = selectedYear === new Date().getFullYear() && i === new Date().getMonth();
               return (
                 <div
                   key={month}
-                  className={`rounded-md px-2 py-2 text-center text-sm select-none ${
+                  className={cn(
+                    'flex flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-2.5 text-sm select-none transition-colors',
                     isPaid
-                      ? 'text-muted-foreground line-through bg-muted/40'
-                      : 'font-bold text-foreground bg-muted/20'
-                  }`}
+                      ? 'bg-green-500/10 text-green-600/70 dark:text-green-400/70'
+                      : 'bg-muted/30 font-semibold text-foreground',
+                    isCurrentMonth && 'ring-2 ring-primary ring-offset-1 ring-offset-background'
+                  )}
                 >
-                  {month}
+                  {isPaid && <Check className="h-3 w-3" strokeWidth={3} />}
+                  <span>{month}</span>
                 </div>
               );
             })}
           </div>
           <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
             <div className="flex items-center gap-1.5">
-              <div className="h-2 w-2 rounded-full bg-muted-foreground/40" />
+              <div className="h-2 w-2 rounded-full bg-green-500/60" />
               <span>Paid</span>
             </div>
             <div className="flex items-center gap-1.5">
               <div className="h-2 w-2 rounded-full bg-foreground/60" />
               <span>Pending</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="h-2 w-2 rounded-full ring-2 ring-primary" />
+              <span>This month</span>
             </div>
           </div>
         </CardContent>

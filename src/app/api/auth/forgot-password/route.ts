@@ -63,8 +63,13 @@ export async function POST(request: NextRequest) {
         user.resetTokenExpiry = expiry;
         await user.save();
 
-        // Build the reset link using the raw token
-        const appUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+        // Build the reset link using the raw token. NEXTAUTH_URL is often
+        // only configured for Production in Vercel's dashboard — VERCEL_URL
+        // is auto-injected on every deployment (including each Preview,
+        // with that deployment's own dynamic domain), so it's a safer
+        // fallback than defaulting straight to localhost.
+        const appUrl = process.env.NEXTAUTH_URL
+            || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
         const resetLink = `${appUrl}/reset-password?token=${rawToken}`;
         const userId = user._id;
         const userEmail = user.email;
