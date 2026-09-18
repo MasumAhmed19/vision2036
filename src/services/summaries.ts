@@ -12,8 +12,16 @@ export const summariesService = {
 
   // Get global summary (all users) for a specific year
   getGlobalSummary: async (year: number): Promise<GlobalSummary> => {
-    const response = await api.get<ApiResponse<GlobalSummary>>('/summaries/global', { 
-      params: { year } 
+    const response = await api.get<ApiResponse<GlobalSummary>>('/summaries/global', {
+      params: { year }
+    });
+    return response.data.data;
+  },
+
+  // Get global summary across the fund's entire lifetime, not one year
+  getGlobalSummaryAllTime: async (): Promise<GlobalSummary> => {
+    const response = await api.get<ApiResponse<GlobalSummary>>('/summaries/global', {
+      params: { scope: 'all-time' },
     });
     return response.data.data;
   },

@@ -1,8 +1,8 @@
 import User from '@/models/User';
 import MonthlySummary from '@/models/MonthlySummary';
-import { getContributionPolicy } from '@/lib/policies';
+import { getContributionPolicy, formatMonthLabel } from '@/lib/policies';
 import { fromPaisa } from '@/lib/money';
-import { getMemberContributionsInRange, getPeriodAggregate } from '@/lib/ledger';
+import { getMemberContributionsInRange, getPeriodAggregate, getRangeAggregate, getAllTimeRange } from '@/lib/ledger';
 
 // These three functions are the public read API other routes call — their
 // return shapes are unchanged from before the ledger migration (the
@@ -131,6 +131,7 @@ export async function buildGlobalSummary(year: number) {
 
   return {
     year,
+    periodLabel: String(year),
     config: {
       monthlyAmount: policy.monthlyAmount,
       yearlyFlexibleAmount: policy.yearlyFlexibleAmount,
@@ -144,6 +145,8 @@ export async function buildGlobalSummary(year: number) {
       costs: totalCosts,
       operationalCosts: totalOperationalCosts,
       investmentAmount: totalInvestmentAmount,
+      interest: totalInterest,
+      investmentReturns: totalInvestmentReturns,
       // netAmount = collected + interest + investment returns, minus
       // operational costs only — investment (an asset transfer, not an
       // expense) is never deducted. See newDesign.md §1/§3.
@@ -153,6 +156,111 @@ export async function buildGlobalSummary(year: number) {
       monthlyExpected: memberCount * policy.monthlyAmount * 12,
       monthlyCollected: totalMonthlyCollected,
       flexibleExpected: memberCount * policy.yearlyFlexibleAmount,
+      flexibleCollected: totalFlexibleCollected,
+    },
+    costItems: await getCostItemsInRange(startPeriod, endPeriod),
+    userSummaries,
+  };
+}
+
+/**
+ * Same shape as buildGlobalSummary, but over the fund's entire lifetime
+ * instead of one calendar year — "since the first-ever activity" through
+ * the current month, rather than Jan–Dec of a chosen year. Backs the
+ * Global Summary page's "All Time" view (see buildGlobalSummary's "Year"
+ * view for the per-year equivalent).
+ *
+ * "Expected" still uses the same full-target-regardless-of-how-much-elapsed
+ * philosophy as the per-year view (a member's yearly target counts in full
+ * even mid-year) — just multiplied by how many months/years this whole
+ * span covers instead of always exactly one. It doesn't know when any
+ * individual member joined, so a member who joined later still gets the
+ * same flat target as everyone else — an existing simplification carried
+ * over from buildGlobalSummary, not a new one introduced here.
+ */
+export async function buildGlobalSummaryAllTime() {
+  const policy = getContributionPolicy();
+  const { startPeriod, endPeriod } = await getAllTimeRange();
+
+  const members = await User.find({ isActive: true }).select('_id name email avatar');
+  const [contributions, aggregate] = await Promise.all([
+    getMemberContributionsInRange(startPeriod, endPeriod),
+    getRangeAggregate(startPeriod, endPeriod),
+  ]);
+  const contributionByMember = new Map(contributions.map((c) => [c.memberId, c]));
+
+  const totalMonthlyCollected = fromPaisa(aggregate.contributionsMonthly);
+  const totalFlexibleCollected = fromPaisa(aggregate.contributionsFlex);
+  const totalOperationalCosts = fromPaisa(aggregate.bankCharges + aggregate.operationalCosts);
+  const totalInvestmentAmount = fromPaisa(aggregate.investedOut);
+  const totalInterest = fromPaisa(aggregate.interest);
+  const totalInvestmentReturns = fromPaisa(aggregate.investmentReturns);
+
+  const totalCosts = totalOperationalCosts + totalInvestmentAmount;
+  const totalCollected = totalMonthlyCollected + totalFlexibleCollected;
+  const memberCount = members.length;
+  const [startYear, startMonth] = startPeriod.split('-').map(Number);
+  const [endYear, endMonth] = endPeriod.split('-').map(Number);
+  const monthsSpanned = (endYear - startYear) * 12 + (endMonth - startMonth) + 1;
+  const yearsSpanned = endYear - startYear + 1;
+  const monthlyTargetPerMember = policy.monthlyAmount * monthsSpanned;
+  const flexTargetPerMember = policy.yearlyFlexibleAmount * yearsSpanned;
+  const totalExpected = memberCount * (monthlyTargetPerMember + flexTargetPerMember);
+
+  const userSummaries = members.map((member) => {
+    const contribution = contributionByMember.get(String(member._id));
+    const monthlyPaid = fromPaisa(contribution?.monthlyPaid ?? 0);
+    const flexiblePaid = fromPaisa(contribution?.flexiblePaid ?? 0);
+    const monthlyRemaining = Math.max(monthlyTargetPerMember - monthlyPaid, 0);
+    const flexibleRemaining = Math.max(flexTargetPerMember - flexiblePaid, 0);
+    const totalPaid = monthlyPaid + flexiblePaid;
+    const totalRemaining = monthlyRemaining + flexibleRemaining;
+    const perMemberExpected = monthlyTargetPerMember + flexTargetPerMember;
+    const completionPercentage = perMemberExpected > 0
+      ? Math.min(Math.round((totalPaid / perMemberExpected) * 100), 100)
+      : 0;
+
+    return {
+      userId: String(member._id),
+      userName: member.name,
+      userEmail: member.email,
+      userAvatar: member.avatar ?? null,
+      monthlyPaid,
+      monthlyRemaining,
+      flexiblePaid,
+      flexibleRemaining,
+      totalPaid,
+      totalRemaining,
+      completionPercentage,
+    };
+  }).sort((a, b) => a.userName.localeCompare(b.userName));
+
+  return {
+    year: Number(endPeriod.slice(0, 4)),
+    periodLabel: startPeriod === endPeriod
+      ? formatMonthLabel(startPeriod)
+      : `${formatMonthLabel(startPeriod)} – ${formatMonthLabel(endPeriod)} (All Time)`,
+    config: {
+      monthlyAmount: policy.monthlyAmount,
+      yearlyFlexibleAmount: policy.yearlyFlexibleAmount,
+      deadlineDay: policy.deadlineDay,
+      totalMembers: memberCount,
+    },
+    totals: {
+      expected: totalExpected,
+      collected: totalCollected,
+      remaining: Math.max(totalExpected - totalCollected, 0),
+      costs: totalCosts,
+      operationalCosts: totalOperationalCosts,
+      investmentAmount: totalInvestmentAmount,
+      interest: totalInterest,
+      investmentReturns: totalInvestmentReturns,
+      netAmount: totalCollected + totalInterest + totalInvestmentReturns - totalOperationalCosts,
+    },
+    breakdown: {
+      monthlyExpected: memberCount * monthlyTargetPerMember,
+      monthlyCollected: totalMonthlyCollected,
+      flexibleExpected: memberCount * flexTargetPerMember,
       flexibleCollected: totalFlexibleCollected,
     },
     costItems: await getCostItemsInRange(startPeriod, endPeriod),

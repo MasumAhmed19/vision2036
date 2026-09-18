@@ -47,10 +47,14 @@ export const transfersService = {
     return response.data.data;
   },
 
-  // Verify a transfer (admin)
-  verifyTransfer: async (id: string, remarks?: string): Promise<Transfer> => {
+  // Verify a transfer (admin). Returns the server's message too — it's not
+  // always the generic "verified successfully" string: verifying a late
+  // payment for an already-closed month carries a note that the month got
+  // auto-reopened (see /api/transfers/[id]/verify) that the caller needs to
+  // actually surface, not silently discard.
+  verifyTransfer: async (id: string, remarks?: string): Promise<{ data: Transfer; message: string }> => {
     const response = await api.patch<ApiResponse<Transfer>>(`/transfers/${id}/verify`, { status: 'VERIFIED', remarks });
-    return response.data.data;
+    return { data: response.data.data, message: response.data.message || 'Payment verified successfully' };
   },
 
   // Reject a transfer (admin)

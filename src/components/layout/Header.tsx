@@ -1,12 +1,16 @@
 'use client';
 
-import { LogOut, User, Settings } from 'lucide-react';
+import { useState } from 'react';
+import { LogOut, User, Settings, RefreshCw } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'react-hot-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { Logo } from '@/components/common/Logo';
 import { ThemeToggle } from '@/components/common/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { getInitials } from '@/components/common/UserAvatar';
+import { cn } from '@/lib/utils';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,6 +23,24 @@ import Link from 'next/link';
 
 export function Header() {
   const { user, logout } = useAuth();
+  const queryClient = useQueryClient();
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Refetches every query currently mounted on screen — effectively "this
+  // page" — since react-query's 1-minute staleTime + refetchOnWindowFocus:
+  // false (see QueryProvider) otherwise leaves stale data sitting until a
+  // full reload.
+  const handleRefresh = async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      await queryClient.refetchQueries({ type: 'active' });
+    } catch {
+      toast.error('Refresh failed');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
@@ -44,6 +66,17 @@ export function Header() {
 
         {/* Right side */}
         <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9"
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            aria-label="Refresh"
+          >
+            <RefreshCw className={cn('h-4 w-4', isRefreshing && 'animate-spin')} />
+          </Button>
+
           <ThemeToggle />
 
           {user && (

@@ -124,13 +124,22 @@ export interface TopContributor {
   name: string;
   avatar: string | null;
   headshot: string | null; // admin-curated photo for Home's Group/Top Contributors only
-  totalPaid: number; // whole Taka, all-time
+  totalPaid: number; // whole Taka, all-time — what they personally submitted, nothing else
+  // totalPaid plus an even split of investment returns/costs across active
+  // members — same formula as FundPosition.myShare. This is what's actually
+  // displayed on the leaderboard; totalPaid alone still drives who
+  // qualifies (see /api/dashboard/top-contributors).
+  fundShare: number;
 }
 
 export interface FundPosition {
   cash: number; // whole Taka
   investedAtCost: number;
   fundValue: number;
+  // The requesting member's own contributions plus an even split of
+  // investment returns and operational costs across active members —
+  // interest is left out of the split. See /api/fund/route.ts.
+  myShare: number;
 }
 
 // Investment register (Phase 4)
@@ -307,6 +316,11 @@ export interface GlobalSummaryCostItem {
 
 export interface GlobalSummary {
   year: number;
+  // Human-readable label for the period this summary covers — "2026" for
+  // the year view, "July 2025 – August 2026 (All Time)" for the all-time
+  // view. Prefer this over `year` for display; `year` alone can't express
+  // an all-time range.
+  periodLabel: string;
   config: {
     monthlyAmount: number;
     yearlyFlexibleAmount: number;
@@ -320,6 +334,8 @@ export interface GlobalSummary {
     costs: number;
     operationalCosts: number;
     investmentAmount: number;
+    interest: number;
+    investmentReturns: number;
     netAmount: number;
   };
   breakdown: {

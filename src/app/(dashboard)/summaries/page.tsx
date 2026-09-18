@@ -48,11 +48,14 @@ export default function SummariesPage() {
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
 
   const exportMutation = useMutation({
+    // Whole-history statement, not the currently-viewed year — the export
+    // deliberately ignores `selectedYear` (that only drives the on-screen
+    // monthly tracker below).
     mutationFn: async (format: 'pdf' | 'excel') => {
       if (format === 'pdf') {
-        await exportsService.downloadPdf({ scope: 'member', year: selectedYear });
+        await exportsService.downloadPdf({ scope: 'member' });
       } else {
-        await exportsService.downloadExcel({ scope: 'member', year: selectedYear });
+        await exportsService.downloadExcel({ scope: 'member' });
       }
     },
     onSuccess: (_, format) => {

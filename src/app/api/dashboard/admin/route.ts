@@ -26,7 +26,12 @@ export async function GET() {
 
     const [members, currentMonthTransfers, pendingCount, globalSummary, fundPosition, recentActivity, unsyncedTransfers, unsyncedCosts] = await Promise.all([
       User.find({ isActive: true }).select('_id name avatar'),
-      Transfer.find({ selectMonth: currentMonth }).populate('initiator', 'name'),
+      // REJECTED excluded — a rejected transfer isn't an active submission
+      // (the member can resubmit for the same month, see the verify
+      // route's handling), so it must not count toward "submitted this
+      // month" or it misleadingly looks like something is still pending
+      // review when it's actually already been declined.
+      Transfer.find({ selectMonth: currentMonth, status: { $ne: 'REJECTED' } }).populate('initiator', 'name'),
       Transfer.countDocuments({ status: 'PENDING' }),
       buildGlobalSummary(year),
       getFundPosition(),

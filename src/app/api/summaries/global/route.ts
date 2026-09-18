@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import connectDB from '@/lib/mongoose';
-import { buildGlobalSummary } from '@/lib/summary-engine';
+import { buildGlobalSummary, buildGlobalSummaryAllTime } from '@/lib/summary-engine';
 
 export async function GET(request: Request) {
   try {
@@ -11,10 +11,12 @@ export async function GET(request: Request) {
     }
 
     const { searchParams } = new URL(request.url);
-    const year = Number(searchParams.get('year') || new Date().getFullYear());
+    const scope = searchParams.get('scope');
 
     await connectDB();
-    const summary = await buildGlobalSummary(year);
+    const summary = scope === 'all-time'
+      ? await buildGlobalSummaryAllTime()
+      : await buildGlobalSummary(Number(searchParams.get('year') || new Date().getFullYear()));
 
     return NextResponse.json({
       success: true,

@@ -88,12 +88,24 @@ export default function HomePage() {
 
       {/* Fund value hero */}
       <div className="rounded-xl border bg-card p-5">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">Fund value</p>
-        {fundLoading ? (
-          <div className="mt-1 h-9 w-40 animate-pulse rounded bg-muted" />
-        ) : (
-          <Money value={fundPosition?.fundValue ?? 0} className="text-3xl font-bold" />
-        )}
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Fund value</p>
+            {fundLoading ? (
+              <div className="mt-1 h-9 w-40 animate-pulse rounded bg-muted" />
+            ) : (
+              <Money value={fundPosition?.fundValue ?? 0} className="text-3xl font-bold" />
+            )}
+          </div>
+          <div className="text-right">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Your share</p>
+            {fundLoading ? (
+              <div className="mt-1 ml-auto h-6 w-24 animate-pulse rounded bg-muted" />
+            ) : (
+              <Money value={fundPosition?.myShare ?? 0} className="text-lg font-semibold" />
+            )}
+          </div>
+        </div>
 
         <div className="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-secondary">
           <div className="h-full bg-primary" style={{ width: `${yearProgressPct}%` }} />
@@ -146,19 +158,6 @@ export default function HomePage() {
         </Button>
       </div>
 
-      {/* The Group */}
-      <div className="rounded-xl border bg-card p-4">
-        {groupLoading ? (
-          <div className="h-20 animate-pulse rounded bg-muted" />
-        ) : (
-          <GroupBoard
-            members={(groupStatus?.members || []).map((m) => ({ ...m, avatar: m.headshot || m.avatar }))}
-            periodLabel={groupPeriodLabel}
-            onPrevMonth={() => setGroupMonthOffset((o) => o - 1)}
-            onNextMonth={() => setGroupMonthOffset((o) => o + 1)}
-          />
-        )}
-      </div>
 
       {/* Top Contributors */}
       <div className="rounded-xl border bg-card p-4">
@@ -181,12 +180,27 @@ export default function HomePage() {
                 </span>
                 <UserAvatar name={contributor.name} avatar={contributor.headshot || contributor.avatar} className="h-9 w-9 shrink-0" />
                 <p className="min-w-0 flex-1 truncate text-sm font-medium">{contributor.name}</p>
-                <Money value={contributor.totalPaid} className="shrink-0 text-sm font-semibold" />
+                <Money value={contributor.fundShare} className="shrink-0 text-sm font-semibold" />
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {/* The Group */}
+      <div className="rounded-xl border bg-card p-4">
+        {groupLoading ? (
+          <div className="h-20 animate-pulse rounded bg-muted" />
+        ) : (
+          <GroupBoard
+            members={(groupStatus?.members || []).map((m) => ({ ...m, avatar: m.headshot || m.avatar }))}
+            periodLabel={groupPeriodLabel}
+            onPrevMonth={() => setGroupMonthOffset((o) => o - 1)}
+            onNextMonth={() => setGroupMonthOffset((o) => o + 1)}
+          />
+        )}
+      </div>
+
 
       {/* Activity */}
       <div className="rounded-xl border bg-card px-3">

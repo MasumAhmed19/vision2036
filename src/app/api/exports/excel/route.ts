@@ -45,9 +45,8 @@ export async function GET(request: Request) {
         return NextResponse.json({ success: false, message: 'Forbidden' }, { status: 403 });
       }
 
-      data = await getMemberExportData(targetUserId, year || new Date().getFullYear());
+      data = await getMemberExportData(targetUserId);
       fileName = buildExportFileName('member', 'xlsx', {
-        year: data.year,
         memberName: data.user.name,
       });
     } else if (scope === 'monthly') {

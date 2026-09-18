@@ -21,7 +21,11 @@ export async function GET() {
 
     const [summary, currentMonthTransfers, recentTransfers] = await Promise.all([
       buildUserYearlySummary(session.user.id, year),
-      Transfer.find({ initiator: session.user.id, selectMonth: currentMonth }).sort({ transferDate: -1 }),
+      // REJECTED excluded — a rejected transfer isn't an active submission
+      // (the member can resubmit for the same month, see the verify route's
+      // handling), so it must not count toward "submitted this month" or it
+      // misleadingly looks like something is still awaiting review.
+      Transfer.find({ initiator: session.user.id, selectMonth: currentMonth, status: { $ne: 'REJECTED' } }).sort({ transferDate: -1 }),
       Transfer.find({ initiator: session.user.id }).sort({ transferDate: -1 }).limit(5),
     ]);
 

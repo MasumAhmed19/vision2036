@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import connectDB from '@/lib/mongoose';
 import LedgerEntry, { CREDIT_TYPES } from '@/models/LedgerEntry';
 import User from '@/models/User';
-import { getContributionPolicy } from '@/lib/policies';
+import { getContributionPolicy, getCurrentMonthIso } from '@/lib/policies';
 import { toPaisa } from '@/lib/money';
 import type { IPeriodSnapshot } from '@/models/Period';
 
@@ -259,6 +259,42 @@ export async function getMemberContributionsInRange(
     return Array.from(byMember.values());
 }
 
+/** Same as getPeriodAggregate/getRangeAggregate, but with no period bound at all — the all-time totals. */
+export async function getAllTimeAggregate(): Promise<PeriodAggregate> {
+    await connectDB();
+    return aggregateByType({ status: { $in: ['POSTED', 'REVERSED'] } });
+}
+
+/** One member's all-time CONTRIBUTION_MONTHLY/CONTRIBUTION_FLEX totals — no period bound, unlike getMemberContributionsInRange. */
+export async function getMemberAllTimeContribution(memberId: string): Promise<MemberContribution> {
+    await connectDB();
+
+    const rows = await LedgerEntry.aggregate([
+        {
+            $match: {
+                status: { $in: ['POSTED', 'REVERSED'] },
+                type: { $in: ['CONTRIBUTION_MONTHLY', 'CONTRIBUTION_FLEX'] },
+                memberId: new mongoose.Types.ObjectId(memberId),
+            },
+        },
+        {
+            $group: {
+                _id: '$type',
+                creditSum: { $sum: { $cond: [{ $eq: ['$direction', 'CREDIT'] }, '$amount', 0] } },
+                debitSum: { $sum: { $cond: [{ $eq: ['$direction', 'DEBIT'] }, '$amount', 0] } },
+            },
+        },
+    ]);
+
+    const result: MemberContribution = { memberId, monthlyPaid: 0, flexiblePaid: 0 };
+    for (const row of rows) {
+        const net = row.creditSum - row.debitSum;
+        if (row._id === 'CONTRIBUTION_MONTHLY') result.monthlyPaid = net;
+        else result.flexiblePaid = net;
+    }
+    return result;
+}
+
 /**
  * Everything a Period.snapshot freezes at close time, in paisa — the one
  * function allowed to compute it, called both by the close route (which
@@ -315,4 +351,18 @@ export async function listPeriodsWithActivity(startPeriod: string, endPeriod: st
         period: { $gte: startPeriod, $lte: endPeriod },
     });
     return (periods as string[]).sort();
+}
+
+/**
+ * The fund's "all time" window — its first-ever posted activity through the
+ * current month — used by every all-time view (Global Summary's "All Time"
+ * tab, the member export's whole-history statement) so they all agree on
+ * exactly what period "all time" covers instead of each computing it
+ * separately. Falls back to the current month alone if there's no activity
+ * yet (a brand-new install).
+ */
+export async function getAllTimeRange(): Promise<{ startPeriod: string; endPeriod: string }> {
+    const endPeriod = getCurrentMonthIso();
+    const activePeriods = await listPeriodsWithActivity('2000-01', endPeriod);
+    return { startPeriod: activePeriods[0] || endPeriod, endPeriod };
 }

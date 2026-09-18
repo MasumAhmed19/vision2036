@@ -62,10 +62,11 @@ function PendingPaymentsContent() {
   // Verify mutation
   const verifyMutation = useMutation({
     mutationFn: (id: string) => transfersService.verifyTransfer(id),
-    onSuccess: () => {
-      toast.success('Payment verified successfully');
+    onSuccess: ({ message }) => {
+      toast.success(message);
       queryClient.invalidateQueries({ queryKey: ['transfers'] });
       queryClient.invalidateQueries({ queryKey: ['summaries'] });
+      queryClient.invalidateQueries({ queryKey: ['period'] });
       closeDialog();
     },
     onError: (error: any) => {
