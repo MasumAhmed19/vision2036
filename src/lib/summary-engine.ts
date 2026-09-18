@@ -85,6 +85,7 @@ export async function buildGlobalSummary(year: number) {
   let totalFlexibleCollected = 0;
   let totalOperationalCosts = 0;
   let totalInvestmentAmount = 0;
+  let totalInvestmentDeployed = 0;
   let totalInterest = 0;
   let totalInvestmentReturns = 0;
 
@@ -92,12 +93,16 @@ export async function buildGlobalSummary(year: number) {
     totalMonthlyCollected += fromPaisa(agg.contributionsMonthly);
     totalFlexibleCollected += fromPaisa(agg.contributionsFlex);
     totalOperationalCosts += fromPaisa(agg.bankCharges + agg.operationalCosts);
-    totalInvestmentAmount += fromPaisa(agg.investedOut);
+    totalInvestmentDeployed += fromPaisa(agg.investedOut);
+    // Invested means principal still deployed, not lifetime deployment.
+    // Principal-back entries return capital from the investment, so subtract
+    // them from the deployed amount for the value shown in Global Summary.
+    totalInvestmentAmount += fromPaisa(agg.investedOut - agg.investmentPrincipalBack);
     totalInterest += fromPaisa(agg.interest);
     totalInvestmentReturns += fromPaisa(agg.investmentReturns);
   }
 
-  const totalCosts = totalOperationalCosts + totalInvestmentAmount;
+  const totalCosts = totalOperationalCosts + totalInvestmentDeployed;
   const totalCollected = totalMonthlyCollected + totalFlexibleCollected;
   const memberCount = members.length;
   const totalExpected = memberCount * ((policy.monthlyAmount * 12) + policy.yearlyFlexibleAmount);
@@ -192,11 +197,15 @@ export async function buildGlobalSummaryAllTime() {
   const totalMonthlyCollected = fromPaisa(aggregate.contributionsMonthly);
   const totalFlexibleCollected = fromPaisa(aggregate.contributionsFlex);
   const totalOperationalCosts = fromPaisa(aggregate.bankCharges + aggregate.operationalCosts);
-  const totalInvestmentAmount = fromPaisa(aggregate.investedOut);
+  const totalInvestmentDeployed = fromPaisa(aggregate.investedOut);
+  // Invested means principal still deployed, not lifetime deployment.
+  // Principal-back entries return capital from the investment, so subtract
+  // them from the deployed amount for the value shown in Global Summary.
+  const totalInvestmentAmount = fromPaisa(aggregate.investedOut - aggregate.investmentPrincipalBack);
   const totalInterest = fromPaisa(aggregate.interest);
   const totalInvestmentReturns = fromPaisa(aggregate.investmentReturns);
 
-  const totalCosts = totalOperationalCosts + totalInvestmentAmount;
+  const totalCosts = totalOperationalCosts + totalInvestmentDeployed;
   const totalCollected = totalMonthlyCollected + totalFlexibleCollected;
   const memberCount = members.length;
   const [startYear, startMonth] = startPeriod.split('-').map(Number);

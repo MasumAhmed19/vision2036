@@ -136,6 +136,7 @@ export interface FundPosition {
   cash: number; // whole Taka
   investedAtCost: number;
   fundValue: number;
+  netBalance: number; // liquid cash currently available after all movements
   // The requesting member's own contributions plus an even split of
   // investment returns and operational costs across active members —
   // interest is left out of the split. See /api/fund/route.ts.

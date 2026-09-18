@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import connectDB from '@/lib/mongoose';
 import User from '@/models/User';
+import Transfer from '@/models/Transfer';
 import { getMemberContributionsInRange } from '@/lib/ledger';
 import { getContributionPolicy, getCurrentMonthIso } from '@/lib/policies';
 import { fromPaisa } from '@/lib/money';
@@ -31,17 +32,32 @@ export async function GET(request: Request) {
         const year = Number(period.split('-')[0]);
         const policy = getContributionPolicy(year);
 
-        const [members, contributions] = await Promise.all([
+        const [members, contributions, pendingTransfers] = await Promise.all([
             User.find({ isActive: true }).select('_id name avatar headshot').sort({ joinedAt: 1 }),
             getMemberContributionsInRange(period, period),
+            // A submitted transfer does not create a posted ledger entry until
+            // an admin verifies it. Keep this separate from the ledger query so
+            // the group board can distinguish "waiting for approval" from
+            // "not yet paid".
+            Transfer.find({
+                selectMonth: period,
+                status: 'PENDING',
+                monthlyAmount: { $gt: 0 },
+            }).select('initiator').lean(),
         ]);
 
         const paidByMember = new Map(contributions.map((c) => [c.memberId, fromPaisa(c.monthlyPaid)]));
+        const pendingMemberIds = new Set(pendingTransfers.map((transfer) => String(transfer.initiator)));
 
         const members_ = members.map((member) => {
-            const paid = paidByMember.get(String(member._id)) || 0;
+            const memberId = String(member._id);
+            const paid = paidByMember.get(memberId) || 0;
             const status: 'paid' | 'pending' | 'unpaid' =
-                paid >= policy.monthlyAmount ? 'paid' : paid > 0 ? 'pending' : 'unpaid';
+                paid >= policy.monthlyAmount
+                    ? 'paid'
+                    : pendingMemberIds.has(memberId) || paid > 0
+                        ? 'pending'
+                        : 'unpaid';
             return {
                 id: String(member._id),
                 name: member.name,
@@ -57,8 +73,9 @@ export async function GET(request: Request) {
             data: { period, members: members_ },
             message: 'Group status fetched successfully',
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Group status error:', error);
-        return NextResponse.json({ success: false, message: error.message || 'Failed to fetch group status' }, { status: 500 });
+        const message = error instanceof Error ? error.message : 'Failed to fetch group status';
+        return NextResponse.json({ success: false, message }, { status: 500 });
     }
 }

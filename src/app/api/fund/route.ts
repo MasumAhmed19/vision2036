@@ -44,6 +44,10 @@ export const GET = withAuth({}, async ({ request, member }) => {
             cash: fromPaisa(position.cash),
             investedAtCost: fromPaisa(position.investedAtCost),
             fundValue: fromPaisa(position.fundValue),
+            // Home's Net Balance means liquid cash currently available.
+            // Use the authoritative fund position so investment outflows
+            // reduce cash and principal-back entries increase it.
+            netBalance: fromPaisa(position.cash),
             myShare: fromPaisa(myShare),
         },
         message: 'Fund position fetched successfully',

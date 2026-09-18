@@ -88,19 +88,29 @@ export default function HomePage() {
 
       {/* Fund value hero */}
       <div className="rounded-xl border bg-card p-5">
-        <div className="flex items-start justify-between gap-4">
-          <div>
+        <div className="grid gap-4 sm:grid-cols-3 sm:items-start sm:gap-0">
+          <div className="min-w-0 sm:pr-4">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Fund value</p>
             {fundLoading ? (
               <div className="mt-1 h-9 w-40 animate-pulse rounded bg-muted" />
             ) : (
-              <Money value={fundPosition?.fundValue ?? 0} className="text-3xl font-bold" />
+              <Money value={fundPosition?.fundValue ?? 0} className="text-lg md:text-2xl font-bold sm:text-3xl" />
             )}
           </div>
-          <div className="text-right">
+
+          <div className="min-w-0 border-t pt-3 sm:border-l sm:border-t-0 sm:px-4 sm:pt-0">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Net balance</p>
+            {fundLoading ? (
+              <div className="mt-1 h-6 w-28 animate-pulse rounded bg-muted" />
+            ) : (
+              <Money value={fundPosition?.netBalance ?? 0} className="text-lg font-semibold" />
+            )}
+          </div>
+
+          <div className="min-w-0 border-t pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0 sm:text-right">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Your share</p>
             {fundLoading ? (
-              <div className="mt-1 ml-auto h-6 w-24 animate-pulse rounded bg-muted" />
+              <div className="mt-1 h-6 w-28 animate-pulse rounded bg-muted sm:ml-auto" />
             ) : (
               <Money value={fundPosition?.myShare ?? 0} className="text-lg font-semibold" />
             )}

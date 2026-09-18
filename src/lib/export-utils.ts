@@ -35,15 +35,16 @@ type ExportCostRow = {
   approvedBy: string;
 };
 
-// The five fund-activity categories that sit alongside member contributions
-// — everything getPeriodAggregate/getRangeAggregate tracks that isn't a
+// The fund-activity categories that sit alongside member contributions —
+// everything getPeriodAggregate/getRangeAggregate tracks that isn't a
 // CONTRIBUTION_MONTHLY/FLEX entry. All amounts whole Taka.
 export type FundActivity = {
   bankCharges: number;
   operationalCosts: number;
   interest: number;
   investmentReturns: number;
-  investedOut: number;
+  investedOut: number; // net principal still invested
+  investmentPrincipalBack: number;
   activeMemberCount: number;
 };
 
@@ -64,7 +65,10 @@ function toFundActivity(aggregate: PeriodAggregate, activeMemberCount: number): 
     operationalCosts: fromPaisa(aggregate.operationalCosts),
     interest: fromPaisa(aggregate.interest),
     investmentReturns: fromPaisa(aggregate.investmentReturns),
-    investedOut: fromPaisa(aggregate.investedOut),
+    // Match Global Summary's Invested value: deployed principal minus
+    // principal returned from investments.
+    investedOut: fromPaisa(aggregate.investedOut - aggregate.investmentPrincipalBack),
+    investmentPrincipalBack: fromPaisa(aggregate.investmentPrincipalBack),
     activeMemberCount,
   };
 }
@@ -689,9 +693,9 @@ function formatCategory(category: string) {
 // ---------------------------------------------------------------------------
 // Fund-activity + member-share section — shared by the monthly, yearly, and
 // range scopes so all three break the fund's non-contribution movement into
-// the same five categories (bank charges, operational cost, bank interest,
-// investment deployed, investment return) and, where a share figure applies,
-// the same "Member / Contribution / Share of Fund" table.
+// the same categories (bank charges, operational cost, bank interest, net
+// invested principal, principal returned, investment return) and, where a
+// share figure applies, the same "Member / Contribution / Share of Fund" table.
 // ---------------------------------------------------------------------------
 
 function drawFundActivitySection(ctx: DocContext, activity: FundActivity, periodLabel: string) {
@@ -699,10 +703,45 @@ function drawFundActivitySection(ctx: DocContext, activity: FundActivity, period
   drawStatTiles(ctx, [
     ['Bank Charges', formatTaka(activity.bankCharges)],
     ['Operational Cost', formatTaka(activity.operationalCosts)],
-    ['Bank Interest', formatTaka(activity.interest)],
-    ['Investment Deployed', formatTaka(activity.investedOut)],
+    ['Net Invested', formatTaka(activity.investedOut)],
+    ['Principal Returned', formatTaka(activity.investmentPrincipalBack)],
     ['Investment Return', formatTaka(activity.investmentReturns)],
   ]);
+  drawInterestCallout(ctx, activity.interest);
+}
+
+function drawInterestCallout(ctx: DocContext, amount: number) {
+  const height = 40;
+  const orange = rgb(0.88, 0.48, 0.06);
+  const orangeTint = rgb(1, 0.96, 0.88);
+  const orangeBorder = rgb(0.96, 0.72, 0.32);
+  ensureSpace(ctx, height + 16);
+
+  ctx.page.drawRectangle({
+    x: MARGIN,
+    y: ctx.y - height,
+    width: CONTENT_WIDTH,
+    height,
+    color: orangeTint,
+    borderColor: orangeBorder,
+    borderWidth: 1,
+  });
+  ctx.page.drawRectangle({ x: MARGIN, y: ctx.y - height, width: 5, height, color: orange });
+  ctx.page.drawText('Bank Interest Earned', {
+    x: MARGIN + 14,
+    y: ctx.y - 16,
+    size: 8,
+    font: ctx.boldFont,
+    color: orange,
+  });
+  ctx.page.drawText(`${formatTaka(amount)} · pooled and excluded from member shares`, {
+    x: MARGIN + 14,
+    y: ctx.y - 31,
+    size: 9,
+    font: ctx.font,
+    color: BLACK,
+  });
+  ctx.y -= height + 16;
 }
 
 const MEMBER_SHARE_COLUMNS: TableColumn[] = [
@@ -968,7 +1007,9 @@ function fundActivitySheetRow(activity: FundActivity) {
     bankCharges: activity.bankCharges,
     operationalCost: activity.operationalCosts,
     bankInterest: activity.interest,
-    investmentDeployed: activity.investedOut,
+    bankInterestTreatment: 'Pooled; excluded from member shares',
+    netInvested: activity.investedOut,
+    investmentPrincipalBack: activity.investmentPrincipalBack,
     investmentReturn: activity.investmentReturns,
     activeMemberCount: activity.activeMemberCount,
   };
