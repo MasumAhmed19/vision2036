@@ -41,6 +41,7 @@ import { UserAvatar } from '@/components/common/UserAvatar';
 import { cn } from '@/lib/utils';
 import { transfersService } from '@/services';
 import type { Transfer, TransferStatus } from '@/types';
+import { paymentMonthsLabel } from '@/lib/payment-display';
 
 const STATUS_CONFIG: Record<TransferStatus, { label: string; icon: React.ElementType; className: string }> = {
   PENDING: {
@@ -364,7 +365,7 @@ function PaymentRow({
                 : 'Monthly'}
           </p>
           <p className="text-muted-foreground">
-            {format(new Date(transfer.selectMonth + '-01'), 'MMM yyyy')}
+            {paymentMonthsLabel(transfer)}
           </p>
         </div>
       </td>
@@ -487,13 +488,25 @@ function TransferDetailDialog({
             <div className="flex justify-between">
               <span className="text-muted-foreground">Period</span>
               <span className="font-medium">
-                {format(new Date(transfer.selectMonth + '-01'), 'MMMM yyyy')}
+                {paymentMonthsLabel(transfer)}
               </span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Amount</span>
               <span className="font-medium">Tk. {transfer.totalAmount.toLocaleString()}</span>
             </div>
+            {transfer.monthlyAmount > 0 && transfer.flexAmount > 0 && (
+              <>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Monthly portion</span>
+                  <span className="font-medium">Tk. {transfer.monthlyAmount.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Flexible portion</span>
+                  <span className="font-medium">Tk. {transfer.flexAmount.toLocaleString()}</span>
+                </div>
+              </>
+            )}
             <div className="flex justify-between">
               <span className="text-muted-foreground">Transfer Date</span>
               <span className="font-medium">

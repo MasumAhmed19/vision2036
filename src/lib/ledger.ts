@@ -213,8 +213,6 @@ export async function getMemberContributionsInRange(
     endPeriod: string,
     memberId?: string
 ): Promise<MemberContribution[]> {
-    await connectDB();
-
     const match: Record<string, unknown> = {
         // See getPeriodAggregate above — REVERSED must stay included so a
         // reversed contribution and its reversal net to zero rather than
@@ -231,6 +229,20 @@ export async function getMemberContributionsInRange(
     // since that one never filters by memberId at all.
     if (memberId) match.memberId = new mongoose.Types.ObjectId(memberId);
 
+    return aggregateMemberContributions(match);
+}
+
+/** Posted monthly and flexible contributions for every member, including payments allocated to future months. */
+export async function getAllMemberContributions(): Promise<MemberContribution[]> {
+    return aggregateMemberContributions({
+        status: { $in: ['POSTED', 'REVERSED'] },
+        type: { $in: ['CONTRIBUTION_MONTHLY', 'CONTRIBUTION_FLEX'] },
+        memberId: { $ne: null },
+    });
+}
+
+async function aggregateMemberContributions(match: Record<string, unknown>): Promise<MemberContribution[]> {
+    await connectDB();
     // Net credit-minus-debit per (member, type) — a reversal of a
     // contribution is booked as a DEBIT of the same type (see the
     // entries/[id]/reverse route), so this correctly nets it out rather

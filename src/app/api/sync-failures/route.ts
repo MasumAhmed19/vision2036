@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import connectDB from '@/lib/mongoose';
-import Transfer from '@/models/Transfer';
 import Cost from '@/models/Cost';
+import { findGroupedTransfers } from '@/lib/monthly-payments';
 
 export async function GET() {
   try {
@@ -13,19 +13,17 @@ export async function GET() {
 
     await connectDB();
 
-    const [transfers, costs] = await Promise.all([
-      Transfer.find({ status: 'VERIFIED', syncedToSheet: false })
-        .sort({ verifiedAt: -1, createdAt: -1 })
-        .populate('initiator', 'name email'),
+    const [transferPage, costs] = await Promise.all([
+      findGroupedTransfers({ status: 'VERIFIED', syncedToSheet: false }, 1, 0, true),
       Cost.find({ syncedToSheet: false })
         .sort({ date: -1, createdAt: -1 })
         .populate('submittedBy', 'name email'),
     ]);
 
-    const transferItems = transfers.map((item) => ({
+    const transferItems = transferPage.rows.map((item) => ({
       id: String(item._id),
       type: 'transfer' as const,
-      label: `${item.initiator && typeof item.initiator === 'object' ? (item.initiator as any).name : 'Unknown'} · ${item.selectMonth} · Tk. ${item.totalAmount.toLocaleString()}`,
+      label: `${item.initiator && typeof item.initiator === 'object' ? (item.initiator as any).name : 'Unknown'} · ${(item.months || [item.selectMonth]).join(', ')} · Tk. ${item.totalAmount.toLocaleString()}`,
       date: item.verifiedAt || item.createdAt,
       month: item.selectMonth,
       status: item.status,

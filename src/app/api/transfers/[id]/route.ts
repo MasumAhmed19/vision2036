@@ -24,6 +24,8 @@ const mapTransfer = (t: any) => {
         accountNumber: t.accountNumber,
         bankName: t.bankName,
         selectMonth: t.selectMonth,
+        paymentGroupId: t.paymentGroupId?.toString?.(),
+        months: t.months,
         transferChannel: t.transferChannel,
         monthlyAmount: t.monthlyAmount,
         flexAmount: t.flexAmount,
@@ -72,9 +74,17 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
             return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 });
         }
 
+        let data = mapTransfer(transfer);
+        if (transfer.paymentGroupId) {
+            const group = await Transfer.find({ paymentGroupId: transfer.paymentGroupId }).select('selectMonth totalAmount monthlyAmount flexAmount');
+            data = { ...data, months: group.map((item) => item.selectMonth).sort(),
+                monthlyAmount: group.reduce((sum, item) => sum + item.monthlyAmount, 0),
+                flexAmount: group.reduce((sum, item) => sum + item.flexAmount, 0),
+                totalAmount: group.reduce((sum, item) => sum + item.totalAmount, 0) };
+        }
         return NextResponse.json({
             success: true,
-            data: mapTransfer(transfer),
+            data,
             message: 'Transfer fetched successfully',
         });
     } catch (error: any) {

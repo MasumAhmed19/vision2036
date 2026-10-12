@@ -2,9 +2,8 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import connectDB from '@/lib/mongoose';
 import Transfer from '@/models/Transfer';
-import User from '@/models/User';
 
-export async function GET(request: Request) {
+export async function GET() {
     try {
         const session = await auth();
         // Only allow admins and moderators
@@ -15,7 +14,8 @@ export async function GET(request: Request) {
         await connectDB();
 
         // Return badges count
-        const count = await Transfer.countDocuments({ status: 'PENDING' });
+        const pending = await Transfer.find({ status: 'PENDING' }).select('_id paymentGroupId');
+        const count = new Set(pending.map((item) => item.paymentGroupId ? String(item.paymentGroupId) : String(item._id))).size;
 
         return NextResponse.json({
             success: true,

@@ -6,9 +6,12 @@ import Transfer from '@/models/Transfer';
 import LedgerEntry from '@/models/LedgerEntry';
 import Period from '@/models/Period';
 import { rebuildMonthlySummaryForMonth } from '@/lib/summary-engine';
-import { syncTransferToGoogleSheets } from '@/lib/google-sheets';
+import { syncApprovedTransferToSheet } from '@/lib/transfer-sheet-sync';
 import { getClientIp } from '@/lib/request-ip';
 import { toPaisa } from '@/lib/money';
+import mongoose from 'mongoose';
+import AuditLog from '@/models/AuditLog';
+import { assertTransactionSupport } from '@/lib/monthly-payments';
 
 // Mirrors scripts/backfill-ledger.ts's CHANNEL_MAP — Transfer's channel enum
 // isn't identical to LedgerEntry's (no BANK_TRANSFER/INTERNAL overlap).
@@ -21,20 +24,15 @@ const CHANNEL_MAP: Record<string, string> = {
     OTHER: 'OTHER',
 };
 
-function isDuplicateKeyError(error: unknown): boolean {
-    return typeof error === 'object' && error !== null && (error as { code?: number }).code === 11000;
-}
-
 // Verifying a Transfer is the only place that should ever turn a member
 // contribution into a POSTED LedgerEntry — every read (dashboard, ledger,
 // summaries) sums LedgerEntry only, never Transfer directly (see
 // src/lib/ledger.ts). Without this, a VERIFIED transfer is invisible
 // everywhere except the transfers list itself.
 //
-// Idempotent via LedgerEntry's unique (source.sourceType, source.id, type)
-// index (see src/models/LedgerEntry.ts) — a duplicate-key error here just
-// means an entry already exists for this transfer/type, which is fine.
-async function createLedgerEntriesForTransfer(transfer: any, verifiedById: string) {
+// The unique source index prevents duplicate postings. A valid entry left by
+// an older interrupted approval can be reused when the review is retried.
+async function createLedgerEntriesForTransfer(transfer: any, verifiedById: string, session: mongoose.ClientSession) {
     const attachments = transfer.paymentProofUrl
         ? [{
             url: transfer.paymentProofUrl,
@@ -62,8 +60,19 @@ async function createLedgerEntriesForTransfer(transfer: any, verifiedById: strin
     }
 
     for (const part of parts) {
-        try {
-            await LedgerEntry.create({
+        const existing = await LedgerEntry.findOne({
+            'source.sourceType': 'Transfer',
+            'source.id': transfer._id,
+            type: part.type,
+        }).session(session);
+        if (existing) {
+            if (existing.status !== 'POSTED' || existing.period !== transfer.selectMonth || existing.amount !== part.amount ||
+                String(existing.memberId) !== String(transfer.initiator?._id || transfer.initiator)) {
+                throw new Error(`Existing ledger entry for ${transfer.selectMonth} does not match this payment.`);
+            }
+            continue;
+        }
+        const entry = {
                 direction: 'CREDIT',
                 status: 'POSTED',
                 currency: 'BDT',
@@ -78,10 +87,8 @@ async function createLedgerEntriesForTransfer(transfer: any, verifiedById: strin
                 postedAt: transfer.verifiedAt,
                 source: { sourceType: 'Transfer', id: transfer._id },
                 ...part,
-            });
-        } catch (error) {
-            if (!isDuplicateKeyError(error)) throw error;
-        }
+        };
+        await LedgerEntry.create([entry], { session, ordered: true });
     }
 }
 
@@ -94,8 +101,8 @@ async function createLedgerEntriesForTransfer(transfer: any, verifiedById: strin
 // That flips /api/periods/[month] back to computing a live snapshot (see
 // its GET handler) until someone deliberately closes the month again,
 // re-freezing it with the corrected total.
-async function reopenClosedPeriodIfNeeded(month: string, actorId: string, actorName: string): Promise<boolean> {
-    const period = await Period.findOne({ month });
+async function reopenClosedPeriodIfNeeded(month: string, actorId: string, actorName: string, session: mongoose.ClientSession): Promise<boolean> {
+    const period = await Period.findOne({ month }).session(session);
     if (!period || period.status !== 'CLOSED') return false;
 
     const reason = `Auto-reopened: a late payment for ${month} was verified after this month was closed.`;
@@ -103,17 +110,17 @@ async function reopenClosedPeriodIfNeeded(month: string, actorId: string, actorN
     period.reopenedBy = actorId as any;
     period.reopenedAt = new Date();
     period.reopenReason = reason;
-    await period.save();
+    await period.save({ session });
 
-    const AuditLog = (await import('@/models/AuditLog')).default;
-    await AuditLog.create({
+    const log = {
         actorId,
         actorName,
         action: 'PERIOD_REOPENED',
         targetCollection: 'Period',
         targetId: String(period._id),
         newValue: { month, reason, trigger: 'late_transfer_verification' },
-    });
+    };
+    await AuditLog.create([log], { session, ordered: true });
 
     return true;
 }
@@ -196,81 +203,94 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             }, { status: 400 });
         }
 
-        transfer.status = status;
-        transfer.verifiedById = session.user.id as any;
-        transfer.verifiedAt = new Date();
-        // Only touch remarks if the request actually supplied one — an
-        // omitted field must not wipe out remarks left by a prior action.
-        if (remarks !== undefined) {
-            transfer.remarks = remarks;
-        }
-        transfer.syncedToSheet = false;
-        transfer.syncedAt = undefined;
+        {
+            await assertTransactionSupport();
+            const isGroup = Boolean(transfer.paymentGroupId);
+            let months: string[] = [];
+            let groupedTransfers: any[] = [];
+            let reopenedClosedPeriod = false;
+            let syncedAt: Date | undefined;
+            const summaryRefreshFailures: string[] = [];
+            const verifiedAt = new Date();
+            await mongoose.connection.transaction(async (dbSession) => {
+                const group = await Transfer.find(isGroup ? { paymentGroupId: transfer.paymentGroupId } : { _id: transfer._id })
+                    .session(dbSession).sort({ selectMonth: 1 });
+                if (group.length !== (isGroup ? transfer.paymentGroupSize : 1) || group.some((item) => item.status !== 'PENDING') ||
+                    new Set(group.map((item) => item.selectMonth)).size !== group.length) {
+                    throw new Error('This submission is incomplete or has already been reviewed.');
+                }
+                months = group.map((item) => item.selectMonth);
+                for (const item of group) {
+                    item.status = status;
+                    item.verifiedById = session.user.id as any;
+                    item.verifiedAt = verifiedAt;
+                    item.syncedToSheet = false;
+                    item.syncedAt = undefined;
+                    if (remarks !== undefined) item.remarks = remarks;
+                    if (status === 'REJECTED') {
+                        item.rejectionReason = rejectionReason;
+                        item.remarks = rejectionReason;
+                        item.paymentType = undefined;
+                    } else {
+                        item.rejectionReason = undefined;
+                    }
+                    await item.save({ session: dbSession });
+                    if (status === 'VERIFIED') {
+                        await createLedgerEntriesForTransfer(item, session.user.id, dbSession);
+                        reopenedClosedPeriod = await reopenClosedPeriodIfNeeded(
+                            item.selectMonth, session.user.id, session.user.name || 'Unknown', dbSession
+                        ) || reopenedClosedPeriod;
+                    }
+                }
+                await AuditLog.create([{
+                    actorId: session.user.id,
+                    actorName: session.user.name || 'Unknown',
+                    action: status === 'VERIFIED' ? 'TRANSFER_VERIFIED' : 'TRANSFER_REJECTED',
+                    targetCollection: 'Transfers',
+                    targetId: String(group[0]._id),
+                    newValue: { paymentGroupId: isGroup ? String(transfer.paymentGroupId) : undefined, months },
+                    ipAddress: getClientIp(request.headers),
+                }], { session: dbSession, ordered: true });
+                groupedTransfers = group;
+            });
 
-        if (status === 'REJECTED') {
-            transfer.rejectionReason = rejectionReason;
-            transfer.remarks = rejectionReason;
-            // Take this transfer out of the unique (initiator, selectMonth,
-            // paymentType) index (see Transfer.ts) so the member can
-            // resubmit for the same month without hitting a duplicate-key
-            // error — a rejected transfer should never block a fresh one.
-            transfer.paymentType = undefined;
-        } else {
-            transfer.rejectionReason = undefined;
-        }
-
-        await transfer.save();
-
-        let reopenedClosedPeriod = false;
-        if (status === 'VERIFIED') {
-            await createLedgerEntriesForTransfer(transfer, session.user.id);
-            reopenedClosedPeriod = await reopenClosedPeriodIfNeeded(
-                transfer.selectMonth,
-                session.user.id,
-                session.user.name || 'Unknown'
-            );
-            await rebuildMonthlySummaryForMonth(transfer.selectMonth);
-
-            try {
-                await syncTransferToGoogleSheets(transfer as any, session.user.name || 'Unknown');
-                transfer.syncedToSheet = true;
-                transfer.syncedAt = new Date();
-                await transfer.save();
-            } catch (syncError) {
-                console.warn('Transfer sheet sync failed:', syncError);
+            if (status === 'VERIFIED') {
+                for (const month of months) {
+                    try { await rebuildMonthlySummaryForMonth(month); }
+                    catch (summaryError) {
+                        summaryRefreshFailures.push(month);
+                        console.error(`Summary rebuild failed for ${month}:`, summaryError);
+                    }
+                }
+                try {
+                    syncedAt = await syncApprovedTransferToSheet(id, session.user.name || 'Unknown');
+                    await AuditLog.create({
+                        actorId: session.user.id,
+                        actorName: session.user.name || 'Unknown',
+                        action: 'SHEET_SYNCED', targetCollection: 'Transfers', targetId: String(groupedTransfers[0]._id),
+                    });
+                } catch (syncError) {
+                    console.warn('Grouped transfer sheet sync failed:', syncError);
+                }
             }
-        }
-
-        // Create an audit log
-        const AuditLog = (await import('@/models/AuditLog')).default;
-        const actionLabel = status === 'VERIFIED' ? 'TRANSFER_VERIFIED' : 'TRANSFER_REJECTED';
-
-        await AuditLog.create({
-            actorId: session.user.id,
-            actorName: session.user.name || 'Unknown',
-            action: actionLabel,
-            targetCollection: 'Transfers',
-            targetId: transfer._id.toString(),
-            ipAddress: getClientIp(request.headers),
-        });
-
-        if (status === 'VERIFIED' && transfer.syncedToSheet) {
-            await AuditLog.create({
-                actorId: session.user.id,
-                actorName: session.user.name || 'Unknown',
-                action: 'SHEET_SYNCED',
-                targetCollection: 'Transfers',
-                targetId: transfer._id.toString(),
+            const totalAmount = groupedTransfers.reduce((sum, item) => sum + item.totalAmount, 0);
+            const monthlyAmount = groupedTransfers.reduce((sum, item) => sum + item.monthlyAmount, 0);
+            const flexAmount = groupedTransfers.reduce((sum, item) => sum + item.flexAmount, 0);
+            return NextResponse.json({
+                success: true,
+                message: [
+                    `Payment ${status.toLowerCase()} successfully.`,
+                    reopenedClosedPeriod ? `A closed month was reopened; close it again after review.` : '',
+                    summaryRefreshFailures.length
+                        ? `Cached summaries for ${summaryRefreshFailures.join(', ')} could not refresh yet; opening monthly summaries will retry.`
+                        : '',
+                ].filter(Boolean).join(' '),
+                data: { ...mapTransfer(groupedTransfers[0]), months: isGroup ? months : undefined,
+                    totalAmount, monthlyAmount, flexAmount,
+                    syncedToSheet: Boolean(syncedAt), syncedAt,
+                    paymentGroupId: isGroup ? String(transfer.paymentGroupId) : undefined },
             });
         }
-
-        return NextResponse.json({
-            success: true,
-            message: reopenedClosedPeriod
-                ? `Payment verified successfully. ${transfer.selectMonth} had already been closed — it's been reopened so this payment is reflected. Close it again once you're done.`
-                : `Payment ${status.toLowerCase()} successfully`,
-            data: mapTransfer(transfer)
-        });
 
     } catch (error: any) {
         console.error('Transfer verification error:', error);

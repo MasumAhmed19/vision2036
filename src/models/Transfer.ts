@@ -8,6 +8,10 @@ export interface ITransfer {
     accountNumber?: string;
     bankName?: string;
     selectMonth: string; // ISO format e.g: 2026-07
+    // New multi-month submissions share one ID and one proof. Historical and
+    // single-month transfers have no group ID.
+    paymentGroupId?: mongoose.Types.ObjectId;
+    paymentGroupSize?: number;
     transferChannel: TransferChannel;
     monthlyAmount: number;
     flexAmount: number;
@@ -31,6 +35,7 @@ export interface ITransfer {
     verifiedAt?: Date;
     syncedToSheet: boolean;
     syncedAt?: Date;
+    sheetSyncLease?: { token: string; expiresAt: Date };
     createdAt: Date;
     updatedAt: Date;
 }
@@ -65,6 +70,8 @@ const TransferSchema = new Schema<ITransferDocument>(
             type: String,
             required: true,
         },
+        paymentGroupId: { type: Schema.Types.ObjectId },
+        paymentGroupSize: { type: Number, min: 2 },
         transferChannel: {
             type: String,
             enum: ['BANK_TRANSFER', 'BKASH', 'NAGAD', 'ROCKET', 'CASH', 'OTHER'],
@@ -122,6 +129,10 @@ const TransferSchema = new Schema<ITransferDocument>(
         syncedAt: {
             type: Date,
         },
+        sheetSyncLease: {
+            type: new Schema({ token: { type: String, required: true }, expiresAt: { type: Date, required: true } }, { _id: false }),
+            default: undefined,
+        },
     },
     {
         timestamps: true,
@@ -133,6 +144,7 @@ TransferSchema.index({ initiator: 1, selectMonth: 1 }); // non-unique, for query
 TransferSchema.index({ status: 1 });
 TransferSchema.index({ transferChannel: 1, status: 1 });
 TransferSchema.index({ selectMonth: 1, status: 1 });
+TransferSchema.index({ paymentGroupId: 1 }, { sparse: true });
 
 // Real, DB-enforced duplicate-payment guard (replaces the old findOne/create
 // race in route.ts, which could never actually violate a unique index because

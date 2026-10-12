@@ -35,6 +35,7 @@ import { UserAvatar } from '@/components/common/UserAvatar';
 import { cn } from '@/lib/utils';
 import { transfersService } from '@/services';
 import type { Transfer } from '@/types';
+import { paymentMonthsLabel } from '@/lib/payment-display';
 
 export default function PendingPaymentsPage() {
   return (
@@ -67,6 +68,7 @@ function PendingPaymentsContent() {
       queryClient.invalidateQueries({ queryKey: ['transfers'] });
       queryClient.invalidateQueries({ queryKey: ['summaries'] });
       queryClient.invalidateQueries({ queryKey: ['period'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard', 'top-contributors'] });
       closeDialog();
     },
     onError: (error: any) => {
@@ -212,6 +214,12 @@ function PendingPaymentsContent() {
                     : 'Monthly'} Payment - Tk.{' '}
                 {selectedTransfer.totalAmount.toLocaleString()}
               </p>
+              <p className="text-sm text-muted-foreground">{paymentMonthsLabel(selectedTransfer)}</p>
+              {selectedTransfer.monthlyAmount > 0 && selectedTransfer.flexAmount > 0 && (
+                <p className="text-sm text-muted-foreground">
+                  Monthly Tk. {selectedTransfer.monthlyAmount.toLocaleString()} + flexible Tk. {selectedTransfer.flexAmount.toLocaleString()}
+                </p>
+              )}
             </div>
           )}
           <DialogFooter>
@@ -247,6 +255,7 @@ function PendingPaymentsContent() {
                       : 'Monthly'} Payment - Tk.{' '}
                   {selectedTransfer.totalAmount.toLocaleString()}
                 </p>
+                <p className="text-sm text-muted-foreground">{paymentMonthsLabel(selectedTransfer)}</p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="rejectReason">Rejection Reason</Label>
@@ -311,7 +320,7 @@ function PendingPaymentCard({
       <div className="grid grid-cols-2 gap-2 text-sm mb-4">
         <div className="flex items-center gap-2 text-muted-foreground">
           <Calendar className="h-4 w-4" />
-          {format(new Date(transfer.selectMonth + '-01'), 'MMMM yyyy')}
+          {paymentMonthsLabel(transfer)}
         </div>
         <div className="flex items-center gap-2 font-medium">
           <Wallet className="h-4 w-4 text-muted-foreground" />
@@ -379,13 +388,25 @@ function TransferDetails({
         <div className="flex justify-between">
           <span className="text-muted-foreground">Period</span>
           <span className="font-medium">
-            {format(new Date(transfer.selectMonth + '-01'), 'MMMM yyyy')}
+            {paymentMonthsLabel(transfer)}
           </span>
         </div>
         <div className="flex justify-between">
           <span className="text-muted-foreground">Amount</span>
           <span className="font-medium">Tk. {transfer.totalAmount.toLocaleString()}</span>
         </div>
+        {transfer.monthlyAmount > 0 && transfer.flexAmount > 0 && (
+          <>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Monthly portion</span>
+              <span className="font-medium">Tk. {transfer.monthlyAmount.toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Flexible portion</span>
+              <span className="font-medium">Tk. {transfer.flexAmount.toLocaleString()}</span>
+            </div>
+          </>
+        )}
         <div className="flex justify-between">
           <span className="text-muted-foreground">Transfer Date</span>
           <span className="font-medium">

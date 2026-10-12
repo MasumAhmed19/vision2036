@@ -4,6 +4,7 @@ import connectDB from '@/lib/mongoose';
 import Transfer from '@/models/Transfer';
 import { buildUserYearlySummary } from '@/lib/summary-engine';
 import { getContributionPolicy, getCurrentMonthIso } from '@/lib/policies';
+import { findGroupedTransfers } from '@/lib/monthly-payments';
 
 export async function GET() {
   try {
@@ -26,7 +27,7 @@ export async function GET() {
       // handling), so it must not count toward "submitted this month" or it
       // misleadingly looks like something is still awaiting review.
       Transfer.find({ initiator: session.user.id, selectMonth: currentMonth, status: { $ne: 'REJECTED' } }).sort({ transferDate: -1 }),
-      Transfer.find({ initiator: session.user.id }).sort({ transferDate: -1 }).limit(5),
+      findGroupedTransfers({ initiator: session.user.id }, 1, 5),
     ]);
 
     const verifiedMonthly = currentMonthTransfers
@@ -61,9 +62,10 @@ export async function GET() {
           remaining: summary.flexible.remaining,
         },
         summary,
-        recentTransfers: recentTransfers.map((transfer) => ({
+        recentTransfers: recentTransfers.rows.map((transfer) => ({
           id: String(transfer._id),
           selectMonth: transfer.selectMonth,
+          months: transfer.months,
           totalAmount: transfer.totalAmount,
           monthlyAmount: transfer.monthlyAmount,
           flexAmount: transfer.flexAmount,

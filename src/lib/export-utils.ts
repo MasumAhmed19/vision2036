@@ -9,6 +9,7 @@ import { buildGlobalSummary, rebuildMonthlySummaryForMonth } from '@/lib/summary
 import { formatMonthLabel, getMonthRange } from '@/lib/policies';
 import { getAllTimeRange, getMemberContributionsInRange, getPeriodAggregate, getRangeAggregate, type PeriodAggregate } from '@/lib/ledger';
 import { fromPaisa } from '@/lib/money';
+import { groupTransferRows } from '@/lib/monthly-payments';
 
 export type ExportScope = 'member' | 'monthly' | 'yearly' | 'range';
 
@@ -209,7 +210,7 @@ function mapTransferRow(transfer: any): ExportTransferRow {
   return {
     date: formatDate(transfer.transferDate),
     memberName: transfer.initiator?.name || 'Unknown',
-    month: transfer.selectMonth,
+    month: transfer.months?.join(', ') || transfer.selectMonth,
     channel: transfer.transferChannel,
     monthlyAmount: transfer.monthlyAmount || 0,
     flexAmount: transfer.flexAmount || 0,
@@ -217,7 +218,9 @@ function mapTransferRow(transfer: any): ExportTransferRow {
     status: transfer.status,
     verifiedBy: transfer.verifiedById?.name || '',
     verifiedAt: formatDate(transfer.verifiedAt),
-    note: transfer.remarks || transfer.rejectionReason || '',
+    note: transfer.paymentGroupId && !transfer.months
+      ? `Allocation from multi-month payment ${String(transfer.paymentGroupId)}${transfer.remarks ? ` · ${transfer.remarks}` : ''}`
+      : transfer.remarks || transfer.rejectionReason || '',
   };
 }
 
@@ -259,7 +262,7 @@ export async function getMemberExportData(userId: string): Promise<MemberExportD
     computeFundActivityAndShares(startPeriod, endPeriod),
   ]);
 
-  const rows = transfers.map(mapTransferRow);
+  const rows = groupTransferRows(transfers.map((item) => item.toObject())).map(mapTransferRow);
 
   const verifiedMonthly = fromPaisa(ownContribution?.monthlyPaid || 0);
   const verifiedFlex = fromPaisa(ownContribution?.flexiblePaid || 0);
@@ -355,12 +358,7 @@ export async function getYearlyExportData(year: number): Promise<YearlyExportDat
   const [globalSummary, monthlySummaries, transfers, costs, { fundActivity, memberShares }] = await Promise.all([
     buildGlobalSummary(year),
     MonthlySummary.find({ year }).sort({ month: 1 }),
-    Transfer.find({
-      transferDate: {
-        $gte: new Date(Date.UTC(year, 0, 1)),
-        $lt: new Date(Date.UTC(year + 1, 0, 1)),
-      },
-    })
+    Transfer.find({ selectMonth: { $regex: `^${year}-` } })
       .sort({ transferDate: -1, createdAt: -1 })
       .populate('initiator', 'name email')
       .populate('verifiedById', 'name email'),
@@ -665,10 +663,25 @@ function formatStatus(status: string) {
 }
 
 function transferRowToCells(t: ExportTransferRow, includeMember: boolean): string[] {
-  const cells = [t.date.slice(0, 10), t.month, formatChannel(t.channel), formatTaka(t.totalAmount), formatStatus(t.status)];
+  const months = t.month.split(', ');
+  const monthCell = months.length > 1 ? `${months.length} mo.` : t.month;
+  const cells = [t.date.slice(0, 10), monthCell, formatChannel(t.channel), formatTaka(t.totalAmount), formatStatus(t.status)];
   return includeMember
-    ? [t.date.slice(0, 10), t.memberName, t.month, formatChannel(t.channel), formatTaka(t.totalAmount), formatStatus(t.status)]
+    ? [t.date.slice(0, 10), t.memberName, monthCell, formatChannel(t.channel), formatTaka(t.totalAmount), formatStatus(t.status)]
     : cells;
+}
+
+function multiMonthAllocations(transfers: ExportTransferRow[]) {
+  return transfers.flatMap((transfer) => {
+    const months = transfer.month.split(', ');
+    if (months.length < 2) return [];
+    return months.map((month) => ({
+      transferDate: transfer.date.slice(0, 10),
+      month,
+      monthlyAllocation: transfer.monthlyAmount / months.length,
+      status: transfer.status,
+    }));
+  });
 }
 
 const COST_COLUMNS: TableColumn[] = [
@@ -894,6 +907,15 @@ async function createMemberReportPdf(data: MemberExportData) {
 
   drawSectionTitle(ctx, `Transfer History (${data.transfers.length})`);
   drawTable(ctx, TRANSFER_COLUMNS.filter((c) => c.header !== 'Member'), data.transfers.map((t) => transferRowToCells(t, false)));
+  const allocations = multiMonthAllocations(data.transfers);
+  if (allocations.length) {
+    drawSectionTitle(ctx, 'Multi-month Submission Breakdown');
+    drawTable(ctx, [
+      { header: 'Transfer Date', width: 0.3 },
+      { header: 'Month', width: 0.35 },
+      { header: 'Allocation', width: 0.35, align: 'right' },
+    ], allocations.map((item) => [item.transferDate, item.month, formatTaka(item.monthlyAllocation)]));
+  }
 
   addFooters(ctx.pdfDoc, ctx.font);
   return ctx.pdfDoc.save();
@@ -1039,6 +1061,8 @@ export function createExcelBuffer(data: ExportData) {
 
     XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet([fundActivitySheetRow(data.fundActivity)]), 'Fund Activity');
     XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(data.transfers), 'Transfers');
+    const allocations = multiMonthAllocations(data.transfers);
+    if (allocations.length) XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(allocations), 'Month Allocations');
   }
 
   if (data.scope === 'monthly') {

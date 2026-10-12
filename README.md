@@ -57,6 +57,30 @@ Optional for local development fallback:
 - `MONGODB_URI_LOCAL` (example: `mongodb://127.0.0.1:27017/vision2036`)
 - `MONGODB_DB_NAME` (defaults to `vision2036`)
 
+Monthly payment selection (optional):
+
+- `PAYMENT_EARLIEST_MONTH` (defaults to `2025-01`)
+- `PAYMENT_MAX_FUTURE_MONTHS` (defaults to `12` from the current Asia/Dhaka month)
+- `PAYMENT_MAX_MONTHS_PER_SUBMISSION` (defaults to `12`)
+
+Multi-month submissions require a MongoDB replica set or sharded cluster. Each
+selected month creates one allocation under a shared payment ID; approval posts
+all allocations in a single database transaction. Existing payments need no
+migration. Set the three limits in the server environment and redeploy to change
+the available month window.
+
+The payment list and member statement show one submission with its month
+breakdown. Monthly and yearly financial reports use each allocation's accounting
+month. Google Sheets keeps the existing deposit columns and writes one row for
+the physical payment, listing all selected months in its Month cell.
+
+Members can optionally add a flexible amount to a monthly submission. The
+monthly amount remains Tk. 3,000 per selected month; the flexible amount is
+credited to the first selected month and its year. All selected months must
+belong to one year when an extra flexible amount is included. The submission
+still has one proof and one approval, and Google Sheets records the monthly
+and flexible portions in their existing separate columns.
+
 Google Sheets sync:
 
 - `GOOGLE_SHEETS_PROJECT_ID`

@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   ArrowLeft,
   Check,
+  ChevronDown,
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
@@ -21,7 +22,6 @@ import { Button } from '@/components/ui/button';
 import {
   Form,
   FormControl,
-  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -46,17 +46,17 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Money } from '@/components/common/Money';
 import { cn } from '@/lib/utils';
 import { transfersService, bankAccountsService } from '@/services';
+import { formatMonthLabel, getCurrentMonthIso } from '@/lib/policies';
 import { ButtonLoader } from '@/components/common/LoadingStates';
 
 // Transfer constants
-const TRANSFER_CHANNELS = ['BANK_TRANSFER', 'BKASH', 'NAGAD', 'ROCKET', 'CASH', 'OTHER'] as const;
 const MONTHLY_AMOUNT = 3000; // Expected monthly amount per website rules
 
 const submitPaymentSchema = z.object({
   transferDate: z.date({ message: 'Transfer date is required' }),
   selectMonth: z.string().min(1, 'Please select a contribution month (e.g., 2026-07)'),
   isFlexSelected: z.boolean(),
-  flexAmount: z.number().min(0).optional(),
+  flexAmount: z.number().finite().min(0).optional(),
   transferChannel: z.enum(['BANK_TRANSFER', 'BKASH', 'NAGAD', 'ROCKET', 'CASH', 'OTHER'], { message: 'Please select a transfer channel' }),
   bankAccountId: z.string().optional(),
   accountName: z.string().optional(),
@@ -89,6 +89,13 @@ const submitPaymentSchema = z.object({
       message: 'Flexible amount must be greater than 0 if selected',
       path: ['flexAmount']
     })
+  }
+  if (data.isFlexSelected && data.flexAmount && Math.abs(data.flexAmount * 100 - Math.round(data.flexAmount * 100)) > 0.000001) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Flexible amount can have at most two decimal places',
+      path: ['flexAmount']
+    });
   }
 });
 
@@ -141,8 +148,13 @@ export default function SubmitPaymentPage() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
 
-  // This checkbox lets the user decide if they're paying monthly alongside flex
-  const [isMonthlySelected, setIsMonthlySelected] = useState(true);
+  const [paymentMode, setPaymentMode] = useState<'monthly' | 'flex'>('monthly');
+  const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
+
+  const { data: monthlyOptions, isLoading: isLoadingMonths, isError: monthsError, refetch: refetchMonths } = useQuery({
+    queryKey: ['monthly-payment-options'],
+    queryFn: () => transfersService.getMonthlyOptions(),
+  });
 
   const { data: bankAccountsResponse, isLoading: isLoadingBanks } = useQuery({
     queryKey: ['bankAccounts'],
@@ -153,12 +165,12 @@ export default function SubmitPaymentPage() {
   const bankAccounts = Array.isArray(bankAccountsResponse) ? bankAccountsResponse : (respAny?.data || []);
   const primaryBank = bankAccounts.find((bank: any) => bank.isPrimary)?.id || (bankAccounts.length > 0 ? bankAccounts[0].id : undefined);
 
-  const currentYear = new Date().getFullYear();
-  const monthOptions = Array.from({ length: 24 }).map((_, i) => {
-    const d = new Date(currentYear, i, 1);
+  const currentYear = Number(getCurrentMonthIso().slice(0, 4));
+  const monthOptions = Array.from({ length: 12 }).map((_, i) => {
+    const value = `${currentYear}-${String(i + 1).padStart(2, '0')}`;
     return {
-      label: format(d, 'MMMM yyyy'),
-      value: format(d, 'yyyy-MM'),
+      label: formatMonthLabel(value),
+      value,
     };
   });
 
@@ -166,7 +178,7 @@ export default function SubmitPaymentPage() {
     resolver: zodResolver(submitPaymentSchema),
     defaultValues: {
       transferDate: new Date(),
-      selectMonth: format(new Date(), 'yyyy-MM'),
+      selectMonth: getCurrentMonthIso(),
       isFlexSelected: false,
       flexAmount: 0,
       transferChannel: 'BANK_TRANSFER',
@@ -177,7 +189,7 @@ export default function SubmitPaymentPage() {
   const { watch, setValue, trigger } = form;
   const watchChannel = watch('transferChannel');
   const watchBankAccountId = watch('bankAccountId');
-  const watchFlexSelected = watch('isFlexSelected');
+  const watchIsFlexSelected = watch('isFlexSelected');
   const watchFlexAmount = watch('flexAmount') || 0;
   const watchSelectMonth = watch('selectMonth');
   const watchTransferDate = watch('transferDate');
@@ -186,8 +198,15 @@ export default function SubmitPaymentPage() {
   const isBankTransfer = watchChannel === 'BANK_TRANSFER';
   const showNewBankFields = isBankTransfer && watchBankAccountId === 'new';
 
-  const monthlyAmountValue = isMonthlySelected ? MONTHLY_AMOUNT : 0;
-  const flexAmountValue = watchFlexSelected ? watchFlexAmount : 0;
+  const monthlyUnit = monthlyOptions?.monthlyAmount || MONTHLY_AMOUNT;
+  const visibleMonths = (monthlyOptions?.months || []).filter((month) => month.startsWith(`${currentYear}-`));
+  const monthsByYear = visibleMonths.reduce<Record<string, string[]>>((groups, month) => {
+    const year = month.slice(0, 4);
+    (groups[year] ??= []).push(month);
+    return groups;
+  }, {});
+  const monthlyAmountValue = paymentMode === 'monthly' ? selectedMonths.length * monthlyUnit : 0;
+  const flexAmountValue = watchIsFlexSelected ? watchFlexAmount : 0;
   const totalAmount = monthlyAmountValue + flexAmountValue;
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -215,12 +234,12 @@ export default function SubmitPaymentPage() {
   const uploadProofImage = async (file: File): Promise<{ url: string; publicId: string }> => {
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('selectMonth', form.getValues('selectMonth'));
+    formData.append('selectMonth', paymentMode === 'monthly' ? selectedMonths[0] : form.getValues('selectMonth'));
     return transfersService.uploadProof(formData);
   };
 
   const submitMutation = useMutation({
-    mutationFn: (data: any) => transfersService.submitPayment(data),
+    mutationFn: (data: any) => data.months ? transfersService.submitMonthlyPayment(data) : transfersService.submitPayment(data),
     onSuccess: () => {
       toast.success('Payment submitted successfully!');
       queryClient.invalidateQueries({ queryKey: ['transfers'] });
@@ -229,6 +248,7 @@ export default function SubmitPaymentPage() {
     },
     onError: (error: any) => {
       toast.error(error?.response?.data?.message || 'Failed to submit payment');
+      queryClient.invalidateQueries({ queryKey: ['monthly-payment-options'] });
     },
   });
 
@@ -240,6 +260,10 @@ export default function SubmitPaymentPage() {
 
     if (totalAmount <= 0) {
       toast.error('Total amount must be greater than 0');
+      return;
+    }
+    if (paymentMode === 'monthly' && (!selectedMonths.length || selectedMonths.length > (monthlyOptions?.maxMonthsPerSubmission || 12))) {
+      toast.error(`Choose 1 to ${monthlyOptions?.maxMonthsPerSubmission || 12} unpaid months`);
       return;
     }
 
@@ -257,10 +281,10 @@ export default function SubmitPaymentPage() {
 
       const payload: any = {
         transferDate: data.transferDate.toISOString(),
-        selectMonth: data.selectMonth,
+        ...(paymentMode === 'monthly' ? { months: [...selectedMonths].sort() } : { selectMonth: data.selectMonth }),
         transferChannel: data.transferChannel,
-        monthlyAmount: isMonthlySelected ? MONTHLY_AMOUNT : 0,
-        flexAmount: data.isFlexSelected ? data.flexAmount : 0,
+        flexAmount: flexAmountValue,
+        ...(paymentMode === 'flex' ? { monthlyAmount: 0 } : {}),
         totalAmount: totalAmount,
         paymentProofUrl: finalProofUrl,
         paymentProofPublicId,
@@ -294,9 +318,12 @@ export default function SubmitPaymentPage() {
 
   const goNext = async () => {
     if (step === 0) {
-      const valid = await trigger(['selectMonth', 'transferDate', 'isFlexSelected', 'flexAmount']);
-      if (!valid || totalAmount <= 0) {
+      const valid = await trigger(paymentMode === 'monthly'
+        ? ['transferDate', 'isFlexSelected', 'flexAmount']
+        : ['selectMonth', 'transferDate', 'isFlexSelected', 'flexAmount']);
+      if (!valid || totalAmount <= 0 || (paymentMode === 'monthly' && !selectedMonths.length)) {
         if (totalAmount <= 0) toast.error('Configure a payment amount greater than 0');
+        if (paymentMode === 'monthly' && !selectedMonths.length) toast.error('Choose at least one unpaid month');
         return;
       }
     }
@@ -326,7 +353,7 @@ export default function SubmitPaymentPage() {
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back
         </Button>
-        <h1 className="text-2xl font-bold tracking-tight">Pay for {format(watchTransferDate || new Date(), 'MMMM yyyy')}</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Submit Payment</h1>
       </div>
 
       <StepIndicator step={step} />
@@ -337,12 +364,12 @@ export default function SubmitPaymentPage() {
           {step === 0 && (
             <div className="space-y-4 rounded-xl border bg-card p-5">
               <div className="grid gap-6 sm:grid-cols-2">
-                <FormField
+                {paymentMode === 'flex' && <FormField
                   control={form.control}
                   name="selectMonth"
                   render={({ field }: any) => (
                     <FormItem>
-                      <FormLabel>{isMonthlySelected ? 'Contribution Month' : 'Reference Month'}</FormLabel>
+                      <FormLabel>Reference Month</FormLabel>
                       <Select onValueChange={field.onChange} defaultValue={field.value}>
                         <FormControl>
                           <SelectTrigger>
@@ -360,7 +387,7 @@ export default function SubmitPaymentPage() {
                       <FormMessage />
                     </FormItem>
                   )}
-                />
+                />}
 
                 <FormField
                   control={form.control}
@@ -394,53 +421,115 @@ export default function SubmitPaymentPage() {
               </div>
 
               <div className="mt-2 space-y-4 border-t pt-4">
-                <div className="flex items-center space-x-2">
-                  <Checkbox id="monthlyCb" checked={isMonthlySelected} onCheckedChange={(c: any) => setIsMonthlySelected(!!c)} />
-                  <label htmlFor="monthlyCb" className="text-sm font-medium">
-                    Monthly Payment (Tk. {MONTHLY_AMOUNT.toLocaleString()})
-                  </label>
+                <div className="flex gap-2">
+                  <Button type="button" variant={paymentMode === 'monthly' ? 'default' : 'outline'} onClick={() => { setPaymentMode('monthly'); setValue('isFlexSelected', false); }}>Monthly Payment</Button>
+                  <Button type="button" variant={paymentMode === 'flex' ? 'default' : 'outline'} onClick={() => { setPaymentMode('flex'); setValue('isFlexSelected', true); }}>Flexible Payment</Button>
                 </div>
-
-                <div className="space-y-3 pl-1">
+                {paymentMode === 'monthly' ? (
+                  <div className="space-y-3">
+                    <p className="text-sm text-muted-foreground">Choose unpaid months in {currentYear}. Up to {monthlyOptions?.maxMonthsPerSubmission || 12} months per payment, Tk. {monthlyUnit.toLocaleString()} each.</p>
+                    {isLoadingMonths ? <p className="text-sm">Loading available months…</p> : monthsError ? (
+                      <div className="flex items-center gap-3 text-sm"><span>Could not load available months.</span><Button type="button" variant="outline" size="sm" onClick={() => refetchMonths()}>Retry</Button></div>
+                    ) : !visibleMonths.length ? <p className="text-sm">No unpaid months are available in {currentYear}.</p> : (
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button type="button" variant="outline" className="w-full justify-between font-normal">
+                            <span className={cn('truncate', !selectedMonths.length && 'text-muted-foreground')}>
+                              {selectedMonths.length === 0
+                                ? 'Select months'
+                                : selectedMonths.length === 1
+                                  ? formatMonthLabel(selectedMonths[0])
+                                  : `${selectedMonths.length} months selected`}
+                            </span>
+                            <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent align="start" className="max-h-80 w-[var(--radix-popover-trigger-width)] max-w-[calc(100vw-2rem)] overflow-y-auto p-2">
+                          <p className="px-2 pb-2 text-xs text-muted-foreground">
+                            Select up to {monthlyOptions?.maxMonthsPerSubmission || 12} unpaid months
+                          </p>
+                          {Object.entries(monthsByYear).map(([year, months]) => (
+                            <div key={year} className="border-t px-2 py-2 first:border-t-0">
+                              <p className="mb-2 text-xs font-semibold text-muted-foreground">{year}</p>
+                              <div className="grid grid-cols-2 gap-2">
+                                {months.map((month) => {
+                                  const isSelected = selectedMonths.includes(month);
+                                  const isDisabled = !isSelected && selectedMonths.length >= (monthlyOptions?.maxMonthsPerSubmission || 12);
+                                  return (
+                                    <div key={month} className="flex min-w-0 items-center gap-2 text-sm">
+                                      <Checkbox
+                                        id={`payment-month-${month}`}
+                                        checked={isSelected}
+                                        disabled={isDisabled}
+                                        onCheckedChange={(checked) => {
+                                          setSelectedMonths((current) => checked
+                                            ? [...current, month].sort()
+                                            : current.filter((item) => item !== month));
+                                        }}
+                                      />
+                                      <label htmlFor={`payment-month-${month}`} className={cn('cursor-pointer', isDisabled && 'cursor-not-allowed opacity-50')}>
+                                        {formatMonthLabel(month).replace(` ${year}`, '')}
+                                      </label>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))}
+                        </PopoverContent>
+                      </Popover>
+                    )}
+                    <FormField
+                      control={form.control}
+                      name="isFlexSelected"
+                      render={({ field }: any) => (
+                        <FormItem className="flex items-center gap-2 rounded-lg border p-3 space-y-0">
+                          <FormControl>
+                            <Checkbox id="add-flex-payment" checked={field.value} onCheckedChange={field.onChange} />
+                          </FormControl>
+                          <FormLabel htmlFor="add-flex-payment" className="cursor-pointer font-medium">
+                            Add a flexible payment
+                          </FormLabel>
+                        </FormItem>
+                      )}
+                    />
+                    {watchIsFlexSelected && selectedMonths.length > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        The extra amount counts toward {currentYear} flexible contributions and is recorded under {formatMonthLabel(selectedMonths[0])}.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-3 pl-1">
+                    <p className="text-sm text-muted-foreground">Enter a custom amount for the reference month.</p>
+                  </div>
+                )}
+                {watchIsFlexSelected && (
                   <FormField
                     control={form.control}
-                    name="isFlexSelected"
+                    name="flexAmount"
                     render={({ field }: any) => (
-                      <FormItem className="flex items-center space-x-2 space-y-0">
+                      <FormItem>
+                        <FormLabel>Flexible amount</FormLabel>
                         <FormControl>
-                          <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">Tk.</span>
+                            <Input
+                              type="number"
+                              min="0.01"
+                              step="0.01"
+                              placeholder="0"
+                              className="pl-8 text-base!"
+                              {...field}
+                              onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                            />
+                          </div>
                         </FormControl>
-                        <FormLabel className="cursor-pointer font-medium">Add Flexible (Yearly) Amount</FormLabel>
+                        <FormMessage />
                       </FormItem>
                     )}
                   />
-                  {watchFlexSelected && (
-                    <div className="pl-6 pt-1">
-                      <FormField
-                        control={form.control}
-                        name="flexAmount"
-                        render={({ field }: any) => (
-                          <FormItem>
-                            <FormControl>
-                              <div className="relative">
-                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">Tk.</span>
-                                <Input
-                                  type="number"
-                                  min="0"
-                                  placeholder="0"
-                                  className="pl-8 text-base!"
-                                  {...field}
-                                  onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
-                                />
-                              </div>
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                  )}
-                </div>
+                )}
 
                 <div className="flex items-center justify-between rounded-lg border border-primary/20 bg-primary/5 p-4">
                   <span className="font-semibold text-primary">Total</span>
@@ -617,10 +706,13 @@ export default function SubmitPaymentPage() {
             <div className="space-y-4 rounded-xl border bg-card p-5">
               <h3 className="font-semibold">Review before you submit</h3>
               <div className="divide-y rounded-lg border">
-                <SummaryRow label="Month" value={watchSelectMonth} />
+                <SummaryRow label={paymentMode === 'monthly' ? 'Months' : 'Reference month'} value={paymentMode === 'monthly' ? selectedMonths.map(formatMonthLabel).join(', ') : watchSelectMonth} />
                 <SummaryRow label="Transfer date" value={format(watchTransferDate || new Date(), 'PPP')} />
-                {isMonthlySelected && <SummaryRow label="Monthly" value={`Tk. ${MONTHLY_AMOUNT.toLocaleString()}`} />}
-                {watchFlexSelected && <SummaryRow label="Flexible" value={`Tk. ${watchFlexAmount.toLocaleString()}`} />}
+                {paymentMode === 'monthly' && <SummaryRow label="Monthly" value={`Tk. ${monthlyUnit.toLocaleString()} × ${selectedMonths.length}`} />}
+                {flexAmountValue > 0 && <SummaryRow label="Flexible" value={`Tk. ${flexAmountValue.toLocaleString()}`} />}
+                {paymentMode === 'monthly' && flexAmountValue > 0 && (
+                  <SummaryRow label="Flexible reference month" value={formatMonthLabel(selectedMonths[0])} />
+                )}
                 <SummaryRow label="Total" value={<Money value={totalAmount} className="font-semibold" />} />
                 <SummaryRow label="Method" value={watchChannel.replaceAll('_', ' ')} />
                 <SummaryRow label="Proof" value={previewUrl ? 'Attached ✓' : 'Not attached'} />

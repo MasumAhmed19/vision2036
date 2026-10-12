@@ -175,6 +175,19 @@ async function appendRows(sheetName: string, rows: (string | number)[][]) {
   logGoogleSheetsDebug('Rows appended successfully', { sheetName, rowCount: rows.length });
 }
 
+async function depositRowExists(sheetName: string, date: string, member: string, months: string, total: number, proof: string) {
+  const { sheets, config } = getSheetsClient();
+  const existing = await runSheetsOperation(() => sheets.spreadsheets.values.get({
+    spreadsheetId: config.spreadsheetId,
+    range: `'${sheetName}'!A2:H`,
+    valueRenderOption: 'UNFORMATTED_VALUE',
+  }));
+  return Boolean(existing.data.values?.some((row) =>
+    row[0] === date && row[2] === months && Number(row[6]) === total &&
+    (proof ? row[7] === proof : row[1] === member && !row[7])
+  ));
+}
+
 function getDepositSheetName(date: Date) {
   return `All Deposits - ${date.getUTCFullYear()}`;
 }
@@ -225,12 +238,59 @@ export async function syncTransferToGoogleSheets(
     transfer.verifiedAt ? new Date(transfer.verifiedAt).toISOString() : '',
   ];
 
+  if (await depositRowExists(sheetName, String(row[0]), String(row[1]), String(row[2]), transfer.totalAmount, String(row[7]))) {
+    return;
+  }
+
   await appendRows(sheetName, [row]);
 
   logGoogleSheetsDebug('Transfer sync completed', {
     transferId: String(transfer._id),
     targetSheets: [sheetName],
   });
+}
+
+// A grouped payment is one physical deposit. Keep the existing sheet columns
+// and write one row with a comma-separated month allocation in "Month".
+export async function syncGroupedTransfersToGoogleSheets(
+  transfers: (ITransferDocument & { initiator?: any; verifiedById?: any })[],
+  verifiedByName?: string
+) {
+  if (!transfers.length) throw new Error('Empty payment group');
+  const first = transfers[0];
+  if (!first.paymentGroupId || transfers.length !== first.paymentGroupSize ||
+      transfers.some((item) => String(item.paymentGroupId) !== String(first.paymentGroupId) || item.status !== 'VERIFIED')) {
+    throw new Error('Incomplete or unverified payment group');
+  }
+  const transferDate = new Date(first.transferDate);
+  const sheetName = getDepositSheetName(transferDate);
+  const months = transfers.map((item) => item.selectMonth).sort().join(', ');
+  const monthlyAmount = transfers.reduce((sum, item) => sum + item.monthlyAmount, 0);
+  const flexAmount = transfers.reduce((sum, item) => sum + item.flexAmount, 0);
+  const totalAmount = transfers.reduce((sum, item) => sum + item.totalAmount, 0);
+  const proof = first.paymentProofUrl || '';
+  await ensureSheetExists(sheetName, [
+    'Date', 'Member Name', 'Month', 'Channel', 'Monthly Amount', 'Flex Amount',
+    'Total', 'Payment Proof', 'Verified By', 'Verified At',
+  ]);
+
+  // If Sheets appended the row but its response was lost, a retry must not
+  // append the same physical deposit again. New uploads have unique proof URLs.
+  const alreadyPresent = await depositRowExists(sheetName, transferDate.toISOString(), first.initiator?.name || 'Unknown Member', months, totalAmount, proof);
+  if (alreadyPresent) return;
+
+  await appendRows(sheetName, [[
+    transferDate.toISOString(),
+    first.initiator?.name || 'Unknown Member',
+    months,
+    first.transferChannel,
+    monthlyAmount,
+    flexAmount,
+    totalAmount,
+    proof,
+    verifiedByName || first.verifiedById?.name || 'Unknown',
+    first.verifiedAt ? new Date(first.verifiedAt).toISOString() : '',
+  ]]);
 }
 
 export async function syncCostToGoogleSheets(cost: ICostDocument & { submittedBy?: any; approvedBy?: any }) {

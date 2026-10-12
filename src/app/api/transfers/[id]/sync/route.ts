@@ -3,7 +3,7 @@ import { auth } from '@/lib/auth';
 import connectDB from '@/lib/mongoose';
 import Transfer from '@/models/Transfer';
 import AuditLog from '@/models/AuditLog';
-import { syncTransferToGoogleSheets } from '@/lib/google-sheets';
+import { syncApprovedTransferToSheet } from '@/lib/transfer-sheet-sync';
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -30,15 +30,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const body = await request.json().catch(() => ({}));
     if (transfer.syncedToSheet && body?.force !== true) {
       return NextResponse.json(
-        { success: false, message: 'Already synced. Pass { "force": true } to re-sync (this will append a second row).' },
+        { success: false, message: 'Already synced. Pass { "force": true } to re-check the existing row.' },
         { status: 400 }
       );
     }
 
-    await syncTransferToGoogleSheets(transfer as any, (transfer.verifiedById as any)?.name || session.user.name || 'Unknown');
-    transfer.syncedToSheet = true;
-    transfer.syncedAt = new Date();
-    await transfer.save();
+    if (transfer.paymentGroupId && body?.force !== true) {
+      const alreadySynced = await Transfer.exists({ paymentGroupId: transfer.paymentGroupId, syncedToSheet: true });
+      if (alreadySynced) return NextResponse.json({ success: false, message: 'This payment was already synced.' }, { status: 409 });
+    }
+    const syncedAt = await syncApprovedTransferToSheet(String(transfer._id), (transfer.verifiedById as any)?.name || session.user.name || 'Unknown');
 
     await AuditLog.create({
       actorId: session.user.id,
@@ -50,7 +51,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     return NextResponse.json({
       success: true,
-      data: { id: String(transfer._id), syncedToSheet: transfer.syncedToSheet, syncedAt: transfer.syncedAt },
+      data: { id: String(transfer._id), syncedToSheet: true, syncedAt },
       message: 'Transfer synced successfully',
     });
   } catch (error: any) {

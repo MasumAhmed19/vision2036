@@ -124,11 +124,10 @@ export interface TopContributor {
   name: string;
   avatar: string | null;
   headshot: string | null; // admin-curated photo for Home's Group/Top Contributors only
-  totalPaid: number; // whole Taka, all-time — what they personally submitted, nothing else
+  totalPaid: number; // whole Taka, all-time posted monthly and flexible contributions
   // totalPaid plus an even split of investment returns/costs across active
-  // members — same formula as FundPosition.myShare. This is what's actually
-  // displayed on the leaderboard; totalPaid alone still drives who
-  // qualifies (see /api/dashboard/top-contributors).
+  // members — same formula as FundPosition.myShare. The leaderboard displays
+  // totalPaid, the amount the member personally contributed.
   fundShare: number;
 }
 
@@ -232,6 +231,8 @@ export interface Transfer {
   accountNumber?: string;
   bankName?: string;
   selectMonth: string;
+  paymentGroupId?: string;
+  months?: string[];
   transferChannel: TransferChannel;
   monthlyAmount: number;
   flexAmount: number;

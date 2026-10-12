@@ -9,6 +9,7 @@ import { buildGlobalSummary } from '@/lib/summary-engine';
 import { getContributionPolicy, getCurrentMonthIso } from '@/lib/policies';
 import { getFundPosition } from '@/lib/ledger';
 import { fromPaisa } from '@/lib/money';
+import { findGroupedTransfers } from '@/lib/monthly-payments';
 
 export async function GET() {
   try {
@@ -24,7 +25,7 @@ export async function GET() {
     const currentMonth = getCurrentMonthIso(now);
     const policy = getContributionPolicy(year);
 
-    const [members, currentMonthTransfers, pendingCount, globalSummary, fundPosition, recentActivity, unsyncedTransfers, unsyncedCosts] = await Promise.all([
+    const [members, currentMonthTransfers, pendingTransfers, globalSummary, fundPosition, recentActivity, unsyncedTransferPage, unsyncedCosts] = await Promise.all([
       User.find({ isActive: true }).select('_id name avatar'),
       // REJECTED excluded — a rejected transfer isn't an active submission
       // (the member can resubmit for the same month, see the verify
@@ -32,15 +33,16 @@ export async function GET() {
       // month" or it misleadingly looks like something is still pending
       // review when it's actually already been declined.
       Transfer.find({ selectMonth: currentMonth, status: { $ne: 'REJECTED' } }).populate('initiator', 'name'),
-      Transfer.countDocuments({ status: 'PENDING' }),
+      Transfer.find({ status: 'PENDING' }).select('_id paymentGroupId'),
       buildGlobalSummary(year),
       getFundPosition(),
       AuditLog.find({ action: { $in: ['TRANSFER_CREATED', 'TRANSFER_VERIFIED', 'TRANSFER_REJECTED', 'COST_ADDED', 'COST_UPDATED', 'COST_DELETED'] } })
         .sort({ timestamp: -1 })
         .limit(8),
-      Transfer.find({ status: 'VERIFIED', syncedToSheet: false }).sort({ verifiedAt: -1 }).limit(5).populate('initiator', 'name'),
+      findGroupedTransfers({ status: 'VERIFIED', syncedToSheet: false }, 1, 5, true),
       Cost.find({ syncedToSheet: false }).sort({ date: -1 }).limit(5),
     ]);
+    const pendingCount = new Set(pendingTransfers.map((item) => item.paymentGroupId ? String(item.paymentGroupId) : String(item._id))).size;
 
     const monthTotals = new Map<string, { verified: number; submitted: number }>();
     for (const member of members) {
@@ -116,13 +118,13 @@ export async function GET() {
           timestamp: item.timestamp,
         })),
         syncFailures: {
-          transferCount: await Transfer.countDocuments({ status: 'VERIFIED', syncedToSheet: false }),
+          transferCount: unsyncedTransferPage.total,
           costCount: await Cost.countDocuments({ syncedToSheet: false }),
           items: [
-            ...unsyncedTransfers.map((transfer) => ({
+            ...unsyncedTransferPage.rows.map((transfer) => ({
               id: String(transfer._id),
               type: 'transfer',
-              label: `${(transfer.initiator as any)?.name || 'Unknown'} · ${transfer.selectMonth}`,
+              label: `${(transfer.initiator as any)?.name || 'Unknown'} · ${(transfer.months || [transfer.selectMonth]).join(', ')} · Tk. ${transfer.totalAmount.toLocaleString()}`,
               date: transfer.verifiedAt || transfer.updatedAt,
             })),
             ...unsyncedCosts.map((cost) => ({

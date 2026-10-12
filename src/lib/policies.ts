@@ -34,8 +34,9 @@ export function getYearRange(year: number) {
 }
 
 export function getCurrentMonthIso(date = new Date()) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Dhaka', year: 'numeric', month: '2-digit' }).formatToParts(date);
+  const year = Number(parts.find((part) => part.type === 'year')?.value);
+  const month = parts.find((part) => part.type === 'month')?.value;
   return `${year}-${month}`;
 }
 

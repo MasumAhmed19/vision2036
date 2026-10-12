@@ -8,6 +8,8 @@ import BankAccount from '@/models/BankAccount';
 import { getClientIp } from '@/lib/request-ip';
 import { sendPaymentSubmittedEmail } from '@/lib/email';
 import { formatMonthLabel } from '@/lib/policies';
+import { findGroupedTransfers, validateMonthlyMonths } from '@/lib/monthly-payments';
+import { getContributionPolicy } from '@/lib/policies';
 
 const transferChannels = ['BANK_TRANSFER', 'BKASH', 'NAGAD', 'ROCKET', 'CASH', 'OTHER'] as const;
 
@@ -26,7 +28,7 @@ const createTransferSchema = z.object({
     accountName: z.string().trim().optional(),
     accountNumber: z.string().trim().optional(),
     bankName: z.string().trim().optional(),
-    selectMonth: z.string().regex(/^\d{4}-\d{2}$/, 'Invalid contribution month'),
+    selectMonth: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Invalid contribution month'),
     transferChannel: z.enum(transferChannels),
     monthlyAmount: z.coerce.number().min(0).default(0),
     flexAmount: z.coerce.number().min(0).default(0),
@@ -85,6 +87,8 @@ const mapTransfer = (t: any) => {
         accountNumber: t.accountNumber,
         bankName: t.bankName,
         selectMonth: t.selectMonth,
+        paymentGroupId: t.paymentGroupId?.toString?.(),
+        months: t.months,
         transferChannel: t.transferChannel,
         monthlyAmount: t.monthlyAmount,
         flexAmount: t.flexAmount,
@@ -158,24 +162,12 @@ export async function GET(request: Request) {
         if (paymentType && paymentType !== 'all') {
             if (paymentType === 'monthly') {
                 query.monthlyAmount = { $gt: 0 };
-                query.flexAmount = 0;
             } else if (paymentType === 'yearly') {
                 query.flexAmount = { $gt: 0 };
-                query.monthlyAmount = 0;
             }
         }
 
-        const skip = (page - 1) * limit;
-
-        const [transfers, total] = await Promise.all([
-            Transfer.find(query)
-                .sort({ transferDate: -1 })
-                .skip(skip)
-                .limit(limit)
-                .populate('initiator', 'name email avatar role phoneNumber isActive')
-                .populate('verifiedById', 'name email'),
-            Transfer.countDocuments(query),
-        ]);
+        const { rows: transfers, total, page: safePage, limit: safeLimit } = await findGroupedTransfers(query, page, limit, true);
 
         return NextResponse.json({
             success: true,
@@ -183,9 +175,9 @@ export async function GET(request: Request) {
             message: 'Transfers fetched successfully',
             meta: {
                 total,
-                page,
-                limit,
-                totalPage: Math.ceil(total / limit),
+                page: safePage,
+                limit: safeLimit,
+                totalPage: Math.ceil(total / safeLimit),
             },
         });
     } catch (error: any) {
@@ -232,6 +224,14 @@ export async function POST(request: Request) {
             paymentProofPublicId,
             remarks,
         } = parsedBody.data;
+
+        if (monthlyAmount > 0) {
+            if (monthlyAmount !== getContributionPolicy().monthlyAmount || flexAmount !== 0) {
+                return NextResponse.json({ success: false, message: 'Monthly payments must be exactly the configured monthly amount and separate from flexible payments.' }, { status: 400 });
+            }
+            try { validateMonthlyMonths([selectMonth]); }
+            catch (error: any) { return NextResponse.json({ success: false, message: error.message }, { status: 400 }); }
+        }
 
         await connectDB();
 

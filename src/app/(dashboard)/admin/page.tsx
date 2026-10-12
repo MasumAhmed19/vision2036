@@ -95,6 +95,10 @@ function AdminDashboardContent() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => router.push('/admin/payments/pending')}>
+            <Clock className="mr-2 h-4 w-4" />
+            Pending Reviews
+          </Button>
           <Button variant="outline" onClick={() => router.push('/admin/summaries')}>
             <BarChart3 className="mr-2 h-4 w-4" />
             Monthly Summaries

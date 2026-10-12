@@ -7,6 +7,15 @@ interface TransferProofUploadResponse {
 }
 
 export const transfersService = {
+  getMonthlyOptions: async (): Promise<{ months: string[]; monthlyAmount: number; currentMonth: string; earliestMonth: string; lastMonth: string; maxMonthsPerSubmission: number; maxFutureMonths: number }> => {
+    const response = await api.get<ApiResponse<{ months: string[]; monthlyAmount: number; currentMonth: string; earliestMonth: string; lastMonth: string; maxMonthsPerSubmission: number; maxFutureMonths: number }>>('/transfers/monthly/options');
+    return response.data.data;
+  },
+
+  submitMonthlyPayment: async (data: any): Promise<Transfer> => {
+    const response = await api.post<ApiResponse<Transfer>>('/transfers/monthly', data);
+    return response.data.data;
+  },
   // Upload payment proof through the backend so file naming is controlled server-side
   uploadProof: async (formData: FormData): Promise<TransferProofUploadResponse> => {
     const response = await api.post<ApiResponse<TransferProofUploadResponse>>('/transfers/upload-proof', formData, {

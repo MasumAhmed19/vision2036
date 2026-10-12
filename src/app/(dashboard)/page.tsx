@@ -63,7 +63,7 @@ export default function HomePage() {
   const { data: topContributors, isLoading: topContributorsLoading } = useQuery({
     queryKey: ['dashboard', 'top-contributors'],
     queryFn: () => dashboardService.getTopContributors(3),
-    staleTime: 5 * 60 * 1000,
+    refetchInterval: 60 * 1000,
   });
 
   const { data: members } = useQuery({
@@ -81,9 +81,18 @@ export default function HomePage() {
 
   return (
     <div className="space-y-6 pb-4">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Vision 2036</h1>
-        <p className="text-muted-foreground">Welcome back, {user.name.split(' ')[0]}.</p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Vision 2036</h1>
+          <p className="text-muted-foreground">Welcome back, {user.name.split(' ')[0]}.</p>
+        </div>
+        {canApprove && (
+          <Button asChild variant="outline" size="sm" className="self-start">
+            <Link href="/admin/payments/pending">
+              <ClipboardCheck className="mr-2 h-4 w-4" /> Pending Reviews
+            </Link>
+          </Button>
+        )}
       </div>
 
       {/* Fund value hero */}
@@ -128,19 +137,17 @@ export default function HomePage() {
       {/* Co-Admin/Admin approvals banner */}
       {canApprove && pendingCount > 0 && (
         <Link
-          href="/approvals"
+          href="/admin/payments/pending"
           className="flex items-center justify-between rounded-xl border border-pending/40 bg-pending/5 p-4"
         >
           <div className="flex items-center gap-3">
             <ClipboardCheck className="h-5 w-5 text-pending" />
             <div>
-              <p className="font-medium">{pendingCount} thing{pendingCount === 1 ? '' : 's'} need you</p>
-              <p className="text-xs text-muted-foreground">Payments and fund entries waiting on review</p>
+              <p className="font-medium">{pendingCount} payment{pendingCount === 1 ? '' : 's'} need review</p>
+              <p className="text-xs text-muted-foreground">Payments waiting on review</p>
             </div>
           </div>
-          <Button size="sm" variant="outline">
-            Review
-          </Button>
+          <span className="rounded-md border bg-background px-3 py-1.5 text-sm font-medium">Review</span>
         </Link>
       )}
 
@@ -171,10 +178,10 @@ export default function HomePage() {
 
       {/* Top Contributors */}
       <div className="rounded-xl border bg-card p-4">
-        <div className="mb-3 flex items-center gap-2">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
           <Trophy className="h-4 w-4 text-pending" />
           <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Top Contributors</h3>
-          <span className="text-xs text-muted-foreground">· all-time</span>
+          <span className="text-xs text-muted-foreground">· monthly + flexible, all-time</span>
         </div>
 
         {topContributorsLoading ? (
@@ -190,7 +197,7 @@ export default function HomePage() {
                 </span>
                 <UserAvatar name={contributor.name} avatar={contributor.headshot || contributor.avatar} className="h-9 w-9 shrink-0" />
                 <p className="min-w-0 flex-1 truncate text-sm font-medium">{contributor.name}</p>
-                <Money value={contributor.fundShare} className="shrink-0 text-sm font-semibold" />
+                <Money value={contributor.totalPaid} className="shrink-0 text-sm font-semibold" />
               </div>
             ))}
           </div>

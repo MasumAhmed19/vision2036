@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import connectDB from '@/lib/mongoose';
-import Transfer from '@/models/Transfer';
+import { findGroupedTransfers } from '@/lib/monthly-payments';
 
 const mapTransfer = (t: any) => ({
     id: t._id.toString(),
@@ -11,6 +11,8 @@ const mapTransfer = (t: any) => ({
     accountNumber: t.accountNumber,
     bankName: t.bankName,
     selectMonth: t.selectMonth,
+    paymentGroupId: t.paymentGroupId?.toString?.(),
+    months: t.months,
     transferChannel: t.transferChannel,
     monthlyAmount: t.monthlyAmount,
     flexAmount: t.flexAmount,
@@ -65,23 +67,12 @@ export async function GET(request: Request) {
         if (paymentType && paymentType !== 'all') {
             if (paymentType === 'monthly') {
                 query.monthlyAmount = { $gt: 0 };
-                query.flexAmount = 0;
             } else if (paymentType === 'yearly') {
                 query.flexAmount = { $gt: 0 };
-                query.monthlyAmount = 0;
             }
         }
 
-        const skip = (page - 1) * limit;
-
-        const [transfers, total] = await Promise.all([
-            Transfer.find(query)
-                .sort({ transferDate: -1 })
-                .skip(skip)
-                .limit(limit)
-                .populate('verifiedById', 'name email'),
-            Transfer.countDocuments(query),
-        ]);
+        const { rows: transfers, total, page: safePage, limit: safeLimit } = await findGroupedTransfers(query, page, limit);
 
         return NextResponse.json({
             success: true,
@@ -89,9 +80,9 @@ export async function GET(request: Request) {
             message: 'Transfers fetched successfully',
             meta: {
                 total,
-                page,
-                limit,
-                totalPage: Math.ceil(total / limit),
+                page: safePage,
+                limit: safeLimit,
+                totalPage: Math.ceil(total / safeLimit),
             },
         });
     } catch (error: any) {
