@@ -60,14 +60,15 @@ Optional for local development fallback:
 Monthly payment selection (optional):
 
 - `PAYMENT_EARLIEST_MONTH` (defaults to `2025-01`)
-- `PAYMENT_MAX_FUTURE_MONTHS` (defaults to `12` from the current Asia/Dhaka month)
 - `PAYMENT_MAX_MONTHS_PER_SUBMISSION` (defaults to `12`)
 
-Multi-month submissions require a MongoDB replica set or sharded cluster. Each
+Members can choose any contribution year from `PAYMENT_EARLIEST_MONTH` onward.
+The year picker loads one year of unpaid months at a time. Multi-month
+submissions require a MongoDB replica set or sharded cluster. Each
 selected month creates one allocation under a shared payment ID; approval posts
 all allocations in a single database transaction. Existing payments need no
-migration. Set the three limits in the server environment and redeploy to change
-the available month window.
+migration. Set the earliest month and per-submission limit in the server
+environment to change those boundaries.
 
 The payment list and member statement show one submission with its month
 breakdown. Monthly and yearly financial reports use each allocation's accounting

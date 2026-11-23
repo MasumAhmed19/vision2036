@@ -6,9 +6,18 @@ interface TransferProofUploadResponse {
   publicId: string;
 }
 
+export interface MonthlyPaymentOptions {
+  months: string[];
+  monthlyAmount: number;
+  currentMonth: string;
+  earliestMonth: string;
+  maxMonthsPerSubmission: number;
+  year: number;
+}
+
 export const transfersService = {
-  getMonthlyOptions: async (): Promise<{ months: string[]; monthlyAmount: number; currentMonth: string; earliestMonth: string; lastMonth: string; maxMonthsPerSubmission: number; maxFutureMonths: number }> => {
-    const response = await api.get<ApiResponse<{ months: string[]; monthlyAmount: number; currentMonth: string; earliestMonth: string; lastMonth: string; maxMonthsPerSubmission: number; maxFutureMonths: number }>>('/transfers/monthly/options');
+  getMonthlyOptions: async (year: number): Promise<MonthlyPaymentOptions> => {
+    const response = await api.get<ApiResponse<MonthlyPaymentOptions>>('/transfers/monthly/options', { params: { year } });
     return response.data.data;
   },
 

@@ -14,6 +14,10 @@ import {
   ArrowLeft,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Wallet,
+  ArrowRight,
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
@@ -104,39 +108,31 @@ type SubmitPaymentFormData = z.infer<typeof submitPaymentSchema>;
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB limit
 
 const STEPS = [
-  { key: 'what', label: 'What' },
-  { key: 'proof', label: 'How + Proof' },
-  { key: 'confirm', label: 'Confirm' },
+  { key: 'what', label: 'Payment' },
+  { key: 'proof', label: 'Transfer details' },
+  { key: 'confirm', label: 'Review' },
 ] as const;
 
 function StepIndicator({ step }: { step: number }) {
   return (
-    <div className="mb-6 flex items-center">
+    <ol className="flex items-center" aria-label="Payment progress">
       {STEPS.map((s, i) => (
-        <div key={s.key} className="flex flex-1 items-center last:flex-none">
-          <div className="flex flex-col items-center gap-1">
-            <div
-              className={cn(
-                'flex h-8 w-8 items-center justify-center rounded-full border-2 text-sm font-semibold transition-colors',
-                i < step
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : i === step
-                    ? 'border-primary text-primary'
-                    : 'border-border text-muted-foreground'
-              )}
-            >
+        <li key={s.key} className="flex min-w-0 flex-1 items-center last:flex-none" aria-current={i === step ? 'step' : undefined}>
+          <div className="flex flex-col items-center gap-1.5 sm:flex-row sm:gap-3">
+            <span className={cn(
+              'flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold transition-colors',
+              i < step ? 'bg-primary/10 text-primary' : i === step ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
+            )}>
               {i < step ? <Check className="h-4 w-4" /> : i + 1}
-            </div>
-            <span className={cn('text-xs', i === step ? 'font-medium text-foreground' : 'text-muted-foreground')}>
+            </span>
+            <span className={cn('whitespace-nowrap text-xs sm:text-sm', i === step ? 'font-semibold text-foreground' : 'text-muted-foreground')}>
               {s.label}
             </span>
           </div>
-          {i < STEPS.length - 1 && (
-            <div className={cn('mx-2 h-0.5 flex-1', i < step ? 'bg-primary' : 'bg-border')} />
-          )}
-        </div>
+          {i < STEPS.length - 1 && <span className={cn('mx-2 h-px flex-1 sm:mx-5', i < step ? 'bg-primary/30' : 'bg-border')} />}
+        </li>
       ))}
-    </div>
+    </ol>
   );
 }
 
@@ -150,10 +146,12 @@ export default function SubmitPaymentPage() {
 
   const [paymentMode, setPaymentMode] = useState<'monthly' | 'flex'>('monthly');
   const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
+  const currentYear = Number(getCurrentMonthIso().slice(0, 4));
+  const [displayYear, setDisplayYear] = useState(currentYear);
 
   const { data: monthlyOptions, isLoading: isLoadingMonths, isError: monthsError, refetch: refetchMonths } = useQuery({
-    queryKey: ['monthly-payment-options'],
-    queryFn: () => transfersService.getMonthlyOptions(),
+    queryKey: ['monthly-payment-options', displayYear],
+    queryFn: () => transfersService.getMonthlyOptions(displayYear),
   });
 
   const { data: bankAccountsResponse, isLoading: isLoadingBanks } = useQuery({
@@ -165,14 +163,13 @@ export default function SubmitPaymentPage() {
   const bankAccounts = Array.isArray(bankAccountsResponse) ? bankAccountsResponse : (respAny?.data || []);
   const primaryBank = bankAccounts.find((bank: any) => bank.isPrimary)?.id || (bankAccounts.length > 0 ? bankAccounts[0].id : undefined);
 
-  const currentYear = Number(getCurrentMonthIso().slice(0, 4));
   const monthOptions = Array.from({ length: 12 }).map((_, i) => {
-    const value = `${currentYear}-${String(i + 1).padStart(2, '0')}`;
+    const value = `${displayYear}-${String(i + 1).padStart(2, '0')}`;
     return {
       label: formatMonthLabel(value),
       value,
     };
-  });
+  }).filter((option) => option.value >= (monthlyOptions?.earliestMonth || '2025-01'));
 
   const form: any = useForm<SubmitPaymentFormData>({
     resolver: zodResolver(submitPaymentSchema),
@@ -180,7 +177,7 @@ export default function SubmitPaymentPage() {
       transferDate: new Date(),
       selectMonth: getCurrentMonthIso(),
       isFlexSelected: false,
-      flexAmount: 0,
+      flexAmount: undefined,
       transferChannel: 'BANK_TRANSFER',
       bankAccountId: primaryBank,
     },
@@ -199,7 +196,8 @@ export default function SubmitPaymentPage() {
   const showNewBankFields = isBankTransfer && watchBankAccountId === 'new';
 
   const monthlyUnit = monthlyOptions?.monthlyAmount || MONTHLY_AMOUNT;
-  const visibleMonths = (monthlyOptions?.months || []).filter((month) => month.startsWith(`${currentYear}-`));
+  const maxSelectableMonths = Math.min(6, monthlyOptions?.maxMonthsPerSubmission || 12);
+  const visibleMonths = [...(monthlyOptions?.months || [])].sort().slice(0, maxSelectableMonths);
   const monthsByYear = visibleMonths.reduce<Record<string, string[]>>((groups, month) => {
     const year = month.slice(0, 4);
     (groups[year] ??= []).push(month);
@@ -208,6 +206,17 @@ export default function SubmitPaymentPage() {
   const monthlyAmountValue = paymentMode === 'monthly' ? selectedMonths.length * monthlyUnit : 0;
   const flexAmountValue = watchIsFlexSelected ? watchFlexAmount : 0;
   const totalAmount = monthlyAmountValue + flexAmountValue;
+  const earliestYear = Number((monthlyOptions?.earliestMonth || '2025-01').slice(0, 4));
+
+  const changeDisplayYear = (year: number) => {
+    if (year < earliestYear || year > 9999) return;
+    setDisplayYear(year);
+    const month = watchSelectMonth?.slice(5) || '01';
+    const nextReferenceMonth = `${year}-${month}`;
+    setValue('selectMonth', nextReferenceMonth >= (monthlyOptions?.earliestMonth || '2025-01')
+      ? nextReferenceMonth
+      : (monthlyOptions?.earliestMonth || '2025-01'));
+  };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -244,6 +253,7 @@ export default function SubmitPaymentPage() {
       toast.success('Payment submitted successfully!');
       queryClient.invalidateQueries({ queryKey: ['transfers'] });
       queryClient.invalidateQueries({ queryKey: ['summaries'] });
+      queryClient.invalidateQueries({ queryKey: ['monthly-payment-options'] });
       router.push('/payments');
     },
     onError: (error: any) => {
@@ -262,8 +272,12 @@ export default function SubmitPaymentPage() {
       toast.error('Total amount must be greater than 0');
       return;
     }
-    if (paymentMode === 'monthly' && (!selectedMonths.length || selectedMonths.length > (monthlyOptions?.maxMonthsPerSubmission || 12))) {
-      toast.error(`Choose 1 to ${monthlyOptions?.maxMonthsPerSubmission || 12} unpaid months`);
+    if (paymentMode === 'monthly' && (!selectedMonths.length || selectedMonths.length > maxSelectableMonths)) {
+      toast.error(`Choose 1 to ${maxSelectableMonths} unpaid months`);
+      return;
+    }
+    if (paymentMode === 'monthly' && flexAmountValue > 0 && new Set(selectedMonths.map((month) => month.slice(0, 4))).size > 1) {
+      toast.error('Choose months from one year when adding a flexible payment');
       return;
     }
 
@@ -321,6 +335,10 @@ export default function SubmitPaymentPage() {
       const valid = await trigger(paymentMode === 'monthly'
         ? ['transferDate', 'isFlexSelected', 'flexAmount']
         : ['selectMonth', 'transferDate', 'isFlexSelected', 'flexAmount']);
+      if (paymentMode === 'monthly' && flexAmountValue > 0 && new Set(selectedMonths.map((month) => month.slice(0, 4))).size > 1) {
+        toast.error('Choose months from one year when adding a flexible payment');
+        return;
+      }
       if (!valid || totalAmount <= 0 || (paymentMode === 'monthly' && !selectedMonths.length)) {
         if (totalAmount <= 0) toast.error('Configure a payment amount greater than 0');
         if (paymentMode === 'monthly' && !selectedMonths.length) toast.error('Choose at least one unpaid month');
@@ -347,93 +365,120 @@ export default function SubmitPaymentPage() {
   };
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6 pb-12">
+    <div className="mx-auto max-w-2xl space-y-6 pb-8">
       <div>
-        <Button variant="ghost" size="sm" onClick={goBack} className="mb-4 -ml-2 text-muted-foreground">
+        <Button variant="ghost" size="sm" onClick={goBack} className="mb-3 -ml-3 text-muted-foreground">
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back
         </Button>
-        <h1 className="text-2xl font-bold tracking-tight">Submit Payment</h1>
+        <div className="flex items-center gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <Wallet className="h-5 w-5" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Submit payment</h1>
+            <p className="mt-1 text-sm text-muted-foreground">Your contribution to Vision 2036.</p>
+          </div>
+        </div>
       </div>
 
       <StepIndicator step={step} />
 
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit as any)} className="space-y-6">
+        <form onSubmit={form.handleSubmit(onSubmit as any)} className="space-y-5">
           {/* Step 1 — What */}
           {step === 0 && (
-            <div className="space-y-4 rounded-xl border bg-card p-5">
-              <div className="grid gap-6 sm:grid-cols-2">
-                {paymentMode === 'flex' && <FormField
-                  control={form.control}
-                  name="selectMonth"
-                  render={({ field }: any) => (
-                    <FormItem>
-                      <FormLabel>Reference Month</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select Month" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent className="max-h-75">
-                          {monthOptions.map((opt) => (
-                            <SelectItem key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />}
-
-                <FormField
-                  control={form.control}
-                  name="transferDate"
-                  render={({ field }: any) => (
-                    <FormItem className="flex flex-col pt-2.5">
-                      <FormLabel>Date of Transfer</FormLabel>
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <FormControl>
-                            <Button variant="outline" className={cn('w-full pl-3 text-left font-normal', !field.value && 'text-muted-foreground')}>
-                              {field.value ? format(field.value, 'PPP') : <span>Pick a date</span>}
-                              <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                            </Button>
-                          </FormControl>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                          <Calendar
-                            mode="single"
-                            selected={field.value}
-                            onSelect={field.onChange}
-                            disabled={(date) => date > new Date() || date < new Date('1900-01-01')}
-                            initialFocus
-                          />
-                        </PopoverContent>
-                      </Popover>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+            <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+              <div className="border-b px-5 py-5 sm:px-7">
+                <h2 className="font-semibold">Payment details</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Choose your contribution and the months it covers.</p>
               </div>
-
-              <div className="mt-2 space-y-4 border-t pt-4">
-                <div className="flex gap-2">
-                  <Button type="button" variant={paymentMode === 'monthly' ? 'default' : 'outline'} onClick={() => { setPaymentMode('monthly'); setValue('isFlexSelected', false); }}>Monthly Payment</Button>
-                  <Button type="button" variant={paymentMode === 'flex' ? 'default' : 'outline'} onClick={() => { setPaymentMode('flex'); setValue('isFlexSelected', true); }}>Flexible Payment</Button>
+              <div className="space-y-5 p-5 sm:p-7">
+                <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted/60 p-1" aria-label="Payment type">
+                  <Button type="button" className={cn('h-11 rounded-lg px-2 text-xs shadow-none sm:px-4 sm:text-sm', paymentMode === 'monthly' && 'bg-background text-foreground shadow-sm hover:bg-background')} aria-pressed={paymentMode === 'monthly'} variant="ghost" onClick={() => { setPaymentMode('monthly'); setValue('isFlexSelected', false); }}>Monthly payment</Button>
+                  <Button type="button" className={cn('h-11 rounded-lg px-2 text-xs shadow-none sm:px-4 sm:text-sm', paymentMode === 'flex' && 'bg-background text-foreground shadow-sm hover:bg-background')} aria-pressed={paymentMode === 'flex'} variant="ghost" onClick={() => { setPaymentMode('flex'); setValue('isFlexSelected', true); }}>Flexible payment</Button>
                 </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-medium">Contribution year</span>
+                  <div className="flex items-center gap-1 rounded-lg border bg-background p-0.5">
+                    <Button type="button" variant="ghost" size="icon" className="h-9 w-9" aria-label="Previous year" disabled={displayYear <= earliestYear} onClick={() => changeDisplayYear(displayYear - 1)}>
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <span className="w-12 text-center text-sm font-semibold">{displayYear}</span>
+                    <Button type="button" variant="ghost" size="icon" className="h-9 w-9" aria-label="Next year" disabled={displayYear >= 9999} onClick={() => changeDisplayYear(displayYear + 1)}>
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+                <div className={cn('grid gap-5', paymentMode === 'flex' && 'sm:grid-cols-2')}>
+                  {paymentMode === 'flex' && <FormField
+                    control={form.control}
+                    name="selectMonth"
+                    render={({ field }: any) => (
+                      <FormItem>
+                        <FormLabel>Reference Month</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger className="h-11! w-full bg-background shadow-none">
+                              <SelectValue placeholder="Select Month" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent className="max-h-75">
+                            {monthOptions.map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />}
+
+                  <FormField
+                    control={form.control}
+                    name="transferDate"
+                    render={({ field }: any) => (
+                      <FormItem className="flex flex-col">
+                        <FormLabel>Date of Transfer</FormLabel>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <FormControl>
+                              <Button variant="outline" className={cn('h-11 w-full bg-background pl-3 text-left font-normal shadow-none', !field.value && 'text-muted-foreground')}>
+                                {field.value ? format(field.value, 'PPP') : <span>Pick a date</span>}
+                                <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                              </Button>
+                            </FormControl>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar
+                              mode="single"
+                              selected={field.value}
+                              onSelect={field.onChange}
+                              disabled={(date) => date > new Date() || date < new Date('1900-01-01')}
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
                 {paymentMode === 'monthly' ? (
                   <div className="space-y-3">
-                    <p className="text-sm text-muted-foreground">Choose unpaid months in {currentYear}. Up to {monthlyOptions?.maxMonthsPerSubmission || 12} months per payment, Tk. {monthlyUnit.toLocaleString()} each.</p>
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="text-sm font-medium">Contribution months</span>
+                      <span className="text-xs text-muted-foreground">Tk. {monthlyUnit.toLocaleString()} / month</span>
+                    </div>
                     {isLoadingMonths ? <p className="text-sm">Loading available months…</p> : monthsError ? (
                       <div className="flex items-center gap-3 text-sm"><span>Could not load available months.</span><Button type="button" variant="outline" size="sm" onClick={() => refetchMonths()}>Retry</Button></div>
-                    ) : !visibleMonths.length ? <p className="text-sm">No unpaid months are available in {currentYear}.</p> : (
+                    ) : !visibleMonths.length ? <p className="text-sm">No unpaid months are available in {displayYear}.</p> : (
                       <Popover>
                         <PopoverTrigger asChild>
-                          <Button type="button" variant="outline" className="w-full justify-between font-normal">
+                          <Button type="button" variant="outline" className="h-11 w-full justify-between bg-background font-normal shadow-none">
                             <span className={cn('truncate', !selectedMonths.length && 'text-muted-foreground')}>
                               {selectedMonths.length === 0
                                 ? 'Select months'
@@ -446,7 +491,7 @@ export default function SubmitPaymentPage() {
                         </PopoverTrigger>
                         <PopoverContent align="start" className="max-h-80 w-[var(--radix-popover-trigger-width)] max-w-[calc(100vw-2rem)] overflow-y-auto p-2">
                           <p className="px-2 pb-2 text-xs text-muted-foreground">
-                            Select up to {monthlyOptions?.maxMonthsPerSubmission || 12} unpaid months
+                            Select up to {maxSelectableMonths} unpaid months
                           </p>
                           {Object.entries(monthsByYear).map(([year, months]) => (
                             <div key={year} className="border-t px-2 py-2 first:border-t-0">
@@ -454,9 +499,9 @@ export default function SubmitPaymentPage() {
                               <div className="grid grid-cols-2 gap-2">
                                 {months.map((month) => {
                                   const isSelected = selectedMonths.includes(month);
-                                  const isDisabled = !isSelected && selectedMonths.length >= (monthlyOptions?.maxMonthsPerSubmission || 12);
+                                  const isDisabled = !isSelected && selectedMonths.length >= maxSelectableMonths;
                                   return (
-                                    <div key={month} className="flex min-w-0 items-center gap-2 text-sm">
+                                    <div key={month} className={cn("flex min-w-0 items-center gap-2 rounded-lg border p-3 text-sm", isSelected ? "border-primary/30 bg-primary/5" : "border-transparent hover:bg-muted/60")}>
                                       <Checkbox
                                         id={`payment-month-${month}`}
                                         checked={isSelected}
@@ -479,11 +524,19 @@ export default function SubmitPaymentPage() {
                         </PopoverContent>
                       </Popover>
                     )}
+                    {selectedMonths.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5" aria-label="Selected contribution months">
+                        {selectedMonths.map((month) => (
+                          <span key={month} className="rounded-md bg-muted px-2 py-1 text-xs font-medium">{formatMonthLabel(month)}</span>
+                        ))}
+                      </div>
+                    )}
+                    <p className="text-xs text-muted-foreground">Showing the next {maxSelectableMonths} unpaid months in {displayYear}. Select up to {maxSelectableMonths} per payment, or switch years to pay ahead.</p>
                     <FormField
                       control={form.control}
                       name="isFlexSelected"
                       render={({ field }: any) => (
-                        <FormItem className="flex items-center gap-2 rounded-lg border p-3 space-y-0">
+                        <FormItem className="flex items-center gap-3 rounded-xl border border-dashed p-4 space-y-0">
                           <FormControl>
                             <Checkbox id="add-flex-payment" checked={field.value} onCheckedChange={field.onChange} />
                           </FormControl>
@@ -495,7 +548,7 @@ export default function SubmitPaymentPage() {
                     />
                     {watchIsFlexSelected && selectedMonths.length > 0 && (
                       <p className="text-xs text-muted-foreground">
-                        The extra amount counts toward {currentYear} flexible contributions and is recorded under {formatMonthLabel(selectedMonths[0])}.
+                        The extra amount counts toward {selectedMonths[0].slice(0, 4)} flexible contributions and is recorded under {formatMonthLabel(selectedMonths[0])}. Select months from one year when adding a flexible amount.
                       </p>
                     )}
                   </div>
@@ -518,10 +571,11 @@ export default function SubmitPaymentPage() {
                               type="number"
                               min="0.01"
                               step="0.01"
-                              placeholder="0"
-                              className="pl-8 text-base!"
+                              placeholder="Enter amount"
+                              className="h-11 bg-background pl-10 text-base! shadow-none"
                               {...field}
-                              onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                              value={field.value ?? ''}
+                              onChange={(e) => field.onChange(e.target.value === '' ? undefined : e.target.valueAsNumber)}
                             />
                           </div>
                         </FormControl>
@@ -531,9 +585,12 @@ export default function SubmitPaymentPage() {
                   />
                 )}
 
-                <div className="flex items-center justify-between rounded-lg border border-primary/20 bg-primary/5 p-4">
-                  <span className="font-semibold text-primary">Total</span>
-                  <Money value={totalAmount} className="text-xl font-bold" />
+                <div className="flex items-center justify-between gap-4 border-t pt-5" aria-live="polite">
+                  <div>
+                    <p className="text-sm font-medium">Payment total</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{paymentMode === 'monthly' ? `${selectedMonths.length} month${selectedMonths.length === 1 ? '' : 's'}${flexAmountValue > 0 ? ' + flexible contribution' : ''}` : 'Flexible contribution'}</p>
+                  </div>
+                  <Money value={totalAmount} className="text-2xl font-bold tracking-tight" />
                 </div>
                 {totalAmount <= 0 && <p className="text-sm font-medium text-destructive">Configure a payment amount greater than 0.</p>}
               </div>
@@ -542,170 +599,190 @@ export default function SubmitPaymentPage() {
 
           {/* Step 2 — How + Proof */}
           {step === 1 && (
-            <div className="space-y-6 rounded-xl border bg-card p-5">
-              <div className="grid gap-6 sm:grid-cols-2">
-                <FormField
-                  control={form.control}
-                  name="transferChannel"
-                  render={({ field }: any) => (
-                    <FormItem>
-                      <FormLabel>Transfer Method</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select method" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="BANK_TRANSFER">Bank Transfer</SelectItem>
-                          <SelectItem value="CASH">Cash Deposit</SelectItem>
-                          <SelectItem value="BKASH">bKash</SelectItem>
-                          <SelectItem value="NAGAD">Nagad</SelectItem>
-                          <SelectItem value="ROCKET">Rocket</SelectItem>
-                          <SelectItem value="OTHER">Other</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                {isBankTransfer && (
+            <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+              <div className="border-b px-5 py-5 sm:px-7">
+                <h2 className="font-semibold">Transfer details</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Tell us how you paid and attach your payment proof.</p>
+              </div>
+              <div className="space-y-6 p-5 sm:p-7">
+                <div className="grid gap-6 sm:grid-cols-2">
                   <FormField
                     control={form.control}
-                    name="bankAccountId"
+                    name="transferChannel"
                     render={({ field }: any) => (
                       <FormItem>
-                        <FormLabel>From Account</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isLoadingBanks}>
+                        <FormLabel>Transfer Method</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
                           <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select saved account" />
+                            <SelectTrigger className="h-11! w-full bg-background shadow-none">
+                              <SelectValue placeholder="Select method" />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {bankAccounts.map((bank: any) => (
-                              <SelectItem key={bank.id} value={bank.id}>
-                                {bank.bankName} (...{bank.accountNumber?.slice(-4)})
-                              </SelectItem>
-                            ))}
-                            <SelectItem value="new">Use a new account</SelectItem>
+                            <SelectItem value="BANK_TRANSFER">Bank Transfer</SelectItem>
+                            <SelectItem value="CASH">Cash Deposit</SelectItem>
+                            <SelectItem value="BKASH">bKash</SelectItem>
+                            <SelectItem value="NAGAD">Nagad</SelectItem>
+                            <SelectItem value="ROCKET">Rocket</SelectItem>
+                            <SelectItem value="OTHER">Other</SelectItem>
                           </SelectContent>
                         </Select>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-                )}
-              </div>
 
-              {showNewBankFields && (
-                <div className="grid gap-4 rounded-lg bg-muted/50 p-4 sm:grid-cols-2">
-                  <FormField
-                    control={form.control}
-                    name="bankName"
-                    render={({ field }: any) => (
-                      <FormItem>
-                        <FormLabel>Bank Name</FormLabel>
-                        <FormControl>
-                          <Input placeholder="e.g. City Bank" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="accountName"
-                    render={({ field }: any) => (
-                      <FormItem>
-                        <FormLabel>Account Name</FormLabel>
-                        <FormControl>
-                          <Input placeholder="John Doe" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="accountNumber"
-                    render={({ field }: any) => (
-                      <FormItem className="sm:col-span-2">
-                        <FormLabel>Account Number</FormLabel>
-                        <FormControl>
-                          <Input placeholder="1234567890" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  {isBankTransfer && (
+                    <FormField
+                      control={form.control}
+                      name="bankAccountId"
+                      render={({ field }: any) => (
+                        <FormItem>
+                          <FormLabel>From Account</FormLabel>
+                          <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isLoadingBanks}>
+                            <FormControl>
+                              <SelectTrigger className="h-11! w-full bg-background shadow-none">
+                                <SelectValue placeholder="Select saved account" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {bankAccounts.map((bank: any) => (
+                                <SelectItem key={bank.id} value={bank.id}>
+                                  {bank.bankName} (...{bank.accountNumber?.slice(-4)})
+                                </SelectItem>
+                              ))}
+                              <SelectItem value="new">Use a new account</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
                 </div>
-              )}
 
-              <div className="border-t pt-4">
-                <h3 className="mb-3 flex items-center gap-2 font-semibold">
-                  <Upload className="h-4 w-4 text-primary" />
-                  Proof of Payment <span className="text-xs font-normal text-muted-foreground">required</span>
-                </h3>
-                <div className="grid gap-6 sm:grid-cols-2">
-                  <div
-                    className={cn(
-                      'relative flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-6 text-center transition-colors',
-                      previewUrl ? 'border-primary/50 bg-primary/5' : 'border-muted-foreground/25 hover:bg-muted/50'
-                    )}
-                    onClick={() => document.getElementById('proof-upload')?.click()}
-                  >
-                    {previewUrl ? (
-                      <div className="relative w-full overflow-hidden rounded-md pt-[56.25%]">
-                        <img src={previewUrl} alt="Preview" className="absolute inset-0 h-full w-full object-cover" />
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity hover:opacity-100">
-                          <p className="text-sm font-medium text-white">Click to change</p>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="rounded-full bg-primary/10 p-3">
-                          <ImageIcon className="h-6 w-6 text-primary" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium">Click to upload image</p>
-                          <p className="text-xs text-muted-foreground">JPEG, PNG up to 5MB</p>
-                        </div>
-                      </>
-                    )}
-                    <input
-                      id="proof-upload"
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp"
-                      className="hidden"
-                      onChange={handleFileSelect}
+                {showNewBankFields && (
+                  <div className="grid gap-4 rounded-xl border bg-muted/30 p-4 sm:grid-cols-2">
+                    <FormField
+                      control={form.control}
+                      name="bankName"
+                      render={({ field }: any) => (
+                        <FormItem>
+                          <FormLabel>Bank Name</FormLabel>
+                          <FormControl>
+                            <Input className="h-11 bg-background shadow-none" placeholder="e.g. City Bank" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="accountName"
+                      render={({ field }: any) => (
+                        <FormItem>
+                          <FormLabel>Account Name</FormLabel>
+                          <FormControl>
+                            <Input className="h-11 bg-background shadow-none" placeholder="John Doe" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="accountNumber"
+                      render={({ field }: any) => (
+                        <FormItem className="sm:col-span-2">
+                          <FormLabel>Account Number</FormLabel>
+                          <FormControl>
+                            <Input className="h-11 bg-background shadow-none" placeholder="1234567890" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
                     />
                   </div>
+                )}
 
-                  <FormField
-                    control={form.control}
-                    name="remarks"
-                    render={({ field }: any) => (
-                      <FormItem>
-                        <FormLabel>Note (optional)</FormLabel>
-                        <FormControl>
-                          <Textarea placeholder="Any additional information..." className="min-h-35 resize-none" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                <div className="space-y-4 border-t pt-5">
+                  <h3 className="flex items-center gap-2 text-sm font-semibold">
+                    <Upload className="h-4 w-4 text-primary" />
+                    Proof of Payment <span className="text-xs font-normal text-muted-foreground">required</span>
+                  </h3>
+                  <div className="space-y-5">
+                    <div
+                      className={cn(
+                        'relative flex min-h-44 cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border border-dashed p-5 text-center outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring',
+                        previewUrl ? 'border-primary/50 bg-primary/5' : 'border-muted-foreground/25 hover:bg-muted/50'
+                      )}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={previewUrl ? 'Change payment proof' : 'Upload payment proof'}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          document.getElementById('proof-upload')?.click();
+                        }
+                      }}
+                      onClick={() => document.getElementById('proof-upload')?.click()}
+                    >
+                      {previewUrl ? (
+                        <div className="relative h-48 w-full overflow-hidden rounded-lg">
+                          <img src={previewUrl} alt="Preview" className="absolute inset-0 h-full w-full object-contain" />
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity hover:opacity-100">
+                            <p className="text-sm font-medium text-white">Click to change</p>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="rounded-full bg-primary/10 p-3">
+                            <ImageIcon className="h-6 w-6 text-primary" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium">Click to upload image</p>
+                            <p className="text-xs text-muted-foreground">JPEG, PNG or WebP · up to 5MB</p>
+                          </div>
+                        </>
+                      )}
+                      {selectedFile && <p className="max-w-full truncate text-xs text-muted-foreground">{selectedFile.name} · Click to change</p>}
+                      <input
+                        id="proof-upload"
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        className="hidden"
+                        onChange={handleFileSelect}
+                      />
+                    </div>
+
+                    <FormField
+                      control={form.control}
+                      name="remarks"
+                      render={({ field }: any) => (
+                        <FormItem>
+                          <FormLabel>Note (optional)</FormLabel>
+                          <FormControl>
+                            <Textarea placeholder="Any additional information..." className="min-h-24 resize-y bg-background shadow-none" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
                 </div>
+
               </div>
             </div>
           )}
 
           {/* Step 3 — Confirm */}
           {step === 2 && (
-            <div className="space-y-4 rounded-xl border bg-card p-5">
-              <h3 className="font-semibold">Review before you submit</h3>
-              <div className="divide-y rounded-lg border">
+            <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+              <div className="border-b px-5 py-5 sm:px-7">
+                <h2 className="font-semibold">Review your payment</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Check the details below before sending for review.</p>
+              </div>
+              <div className="divide-y px-5 sm:px-7">
                 <SummaryRow label={paymentMode === 'monthly' ? 'Months' : 'Reference month'} value={paymentMode === 'monthly' ? selectedMonths.map(formatMonthLabel).join(', ') : watchSelectMonth} />
                 <SummaryRow label="Transfer date" value={format(watchTransferDate || new Date(), 'PPP')} />
                 {paymentMode === 'monthly' && <SummaryRow label="Monthly" value={`Tk. ${monthlyUnit.toLocaleString()} × ${selectedMonths.length}`} />}
@@ -721,16 +798,16 @@ export default function SubmitPaymentPage() {
             </div>
           )}
 
-          <div className="flex gap-4 pt-2">
-            <Button type="button" variant="outline" onClick={goBack} disabled={isPending} className="flex-1">
+          <div className="flex items-center justify-between gap-3 rounded-xl border bg-card p-3 sm:p-4">
+            <Button type="button" variant="outline" onClick={goBack} disabled={isPending} className="h-11 border-transparent shadow-none">
               {step === 0 ? 'Cancel' : 'Back'}
             </Button>
             {step < STEPS.length - 1 ? (
-              <Button type="button" className="flex-1" onClick={goNext}>
-                Continue
+              <Button type="button" className="h-11 min-w-36" onClick={goNext}>
+                Continue <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             ) : (
-              <Button type="submit" className="flex-1" disabled={isPending || totalAmount <= 0}>
+              <Button type="submit" className="h-11 min-w-36" disabled={isPending || totalAmount <= 0}>
                 {isPending ? (
                   <>
                     <ButtonLoader />
@@ -753,9 +830,9 @@ export default function SubmitPaymentPage() {
 
 function SummaryRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between px-4 py-2.5 text-sm">
+    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] items-start gap-4 py-4 text-sm">
       <span className="text-muted-foreground">{label}</span>
-      <span className="font-medium">{value}</span>
+      <span className="min-w-0 text-right font-medium break-words">{value}</span>
     </div>
   );
 }

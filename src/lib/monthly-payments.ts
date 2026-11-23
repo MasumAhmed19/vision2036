@@ -24,18 +24,14 @@ function positiveInteger(name: string, fallback: number): number {
 export function getMonthlyPaymentLimits(now = new Date()) {
   const currentMonth = getCurrentMonthIso(now);
   const earliestMonth = process.env.PAYMENT_EARLIEST_MONTH || '2025-01';
-  const current = parseMonth(currentMonth)!;
   const earliest = parseMonth(earliestMonth);
-  if (earliest === null || earliest > current) throw new Error('Invalid PAYMENT_EARLIEST_MONTH');
-  const maxFutureMonths = positiveInteger('PAYMENT_MAX_FUTURE_MONTHS', 12);
+  if (earliest === null || earliest > parseMonth(currentMonth)!) throw new Error('Invalid PAYMENT_EARLIEST_MONTH');
   const maxMonthsPerSubmission = positiveInteger('PAYMENT_MAX_MONTHS_PER_SUBMISSION', 12);
   return {
     currentMonth,
     earliestMonth,
-    maxFutureMonths,
     maxMonthsPerSubmission,
     monthlyAmount: getContributionPolicy().monthlyAmount,
-    lastMonth: monthFromOrdinal(current + maxFutureMonths),
   };
 }
 
@@ -49,9 +45,8 @@ export function validateMonthlyMonths(months: unknown, now = new Date()): string
   }
   if (new Set(months).size !== months.length) throw new Error('A month may be selected only once.');
   const first = parseMonth(limits.earliestMonth)!;
-  const last = parseMonth(limits.lastMonth)!;
-  if (months.some((month) => parseMonth(month)! < first || parseMonth(month)! > last)) {
-    throw new Error(`Choose months from ${limits.earliestMonth} through ${limits.lastMonth}.`);
+  if (months.some((month) => parseMonth(month)! < first)) {
+    throw new Error(`Choose months from ${limits.earliestMonth} onward.`);
   }
   return [...months].sort();
 }
